@@ -1,0 +1,17 @@
+[package]
+name = "fennec"
+version = "0.1.0"
+authors = ["Dark Kitsu <cbmuench@hotmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rsystem = { path = "../rsystem" }
+rlua = "0.16.3"
+version = "3.0.0"
+ash = "0.29.0"
+glutin = "0.21.1"
+winapi = "0.3.8"
+colored = "1.8.0"
+lazy_static = "1.4.0"
