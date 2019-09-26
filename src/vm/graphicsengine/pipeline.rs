@@ -1,4 +1,3 @@
-use super::memory::Memory;
 use super::vkobject::{VKHandle, VKObject};
 use super::Context;
 use crate::error::FennecError;
@@ -9,17 +8,11 @@ use std::rc::Rc;
 
 /// A 2-dimensional image
 pub struct Image2D {
-    image: VKHandle<vk::Image>,
-    memory: Memory,
+    image: VKHandle<vk::Pipeline>,
 }
 
-impl Image2D {
-    /// Image2D factory method\
-    /// ``extent``: The dimensions of the image\
-    /// ``usage``: How the image will be used\
-    /// ``format``: The pixel format of the image *(default=B8G8R8A8_UNORM)*\
-    /// ``initial_layout``: Initial layout of the image after creation *(default=GENERAL)*\
-    /// ``advanced_settings``: Advanced creation settings
+impl Pipeline {
+    /// Pipeline factory method
     pub fn new(
         context: &Rc<RefCell<Context>>,
         extent: vk::Extent2D,
