@@ -117,8 +117,8 @@ where
     pub fn new(context: &Rc<RefCell<Context>>, handle: THandleType, protected: bool) -> Self {
         Self {
             context: context.clone(),
-            handle: handle,
-            protected: protected,
+            handle,
+            protected,
             name: String::from("Unnamed"),
         }
     }

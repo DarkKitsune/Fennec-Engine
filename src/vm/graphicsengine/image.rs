@@ -43,8 +43,7 @@ impl Image2D {
         image_tiling: Option<ImageTiling>,
     ) -> Result<Self, FennecError> {
         // Check that mip_levels is above 0 and below u32::max / 2
-        if mip_levels.is_some() {
-            let mip_levels = mip_levels.unwrap();
+        if let Some(mip_levels) = mip_levels {
             if mip_levels == 0 {
                 return Err(FennecError::new(
                     "# of mipmap levels must be greater than 0",
@@ -58,8 +57,7 @@ impl Image2D {
             }
         }
         // Check that layers is above 0 and below u32::max / 2
-        if layers.is_some() && layers.unwrap() == 0 {
-            let layers = layers.unwrap();
+        if let Some(layers) = layers {
             if layers == 0 {
                 return Err(FennecError::new("# of layers must be greater than 0"));
             }
@@ -72,7 +70,7 @@ impl Image2D {
         }
         // Set image create info
         let create_info = vk::ImageCreateInfo::builder()
-            .flags(flags.unwrap_or(Default::default()))
+            .flags(flags.unwrap_or_default())
             .image_type(vk::ImageType::TYPE_2D)
             .format(format.unwrap_or(Format::B8G8R8A8_UNORM))
             .extent(vk::Extent3D {
@@ -85,9 +83,10 @@ impl Image2D {
             .tiling(image_tiling.unwrap_or(ImageTiling::OPTIMAL))
             .samples(sample_count.unwrap_or(SampleCountFlags::TYPE_1))
             .usage(usage)
-            .sharing_mode(match simultaneous_use.unwrap_or(false) {
-                true => vk::SharingMode::CONCURRENT,
-                _ => vk::SharingMode::EXCLUSIVE,
+            .sharing_mode(if simultaneous_use.unwrap_or(false) {
+                vk::SharingMode::CONCURRENT
+            } else {
+                vk::SharingMode::EXCLUSIVE
             })
             .initial_layout(initial_layout.unwrap_or(ImageLayout::GENERAL))
             .build();
@@ -103,7 +102,7 @@ impl Image2D {
         // Return image
         Ok(Self {
             image: VKHandle::new(context, image, false),
-            memory: memory,
+            memory,
         })
     }
 

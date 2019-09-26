@@ -13,10 +13,7 @@ impl FWindow {
         let event_loop = EventsLoop::new();
         let window_builder = WindowBuilder::new().with_title("Aaaa");
         let window = window_builder.build(&event_loop)?;
-        Ok(FWindow {
-            event_loop: event_loop,
-            window: window,
-        })
+        Ok(FWindow { event_loop, window })
     }
 
     /// Get the event loop
@@ -47,7 +44,7 @@ impl FWindow {
             .ok_or_else(|| FennecError::new("Window does not exist"))?;
         Ok((client_size.width as u32, client_size.height as u32))
     }
-    
+
     /// Get the client size (inner size) of the window in pixels
     pub fn client_size_pixels(&self) -> Result<(u32, u32), FennecError> {
         let hidpi_factor = self.window().get_hidpi_factor();

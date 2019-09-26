@@ -2,6 +2,7 @@ use crate::error::FennecError;
 use rlua::Lua;
 
 /// A Fennec script engine
+#[derive(Default)]
 pub struct ScriptEngine {
     lua: Lua,
 }
@@ -10,7 +11,7 @@ impl ScriptEngine {
     /// ScriptEngine factory method
     pub fn new() -> Self {
         let lua = Lua::new();
-        Self { lua: lua }
+        Self { lua }
     }
 
     /// Register the core libraries

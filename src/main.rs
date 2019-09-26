@@ -1,5 +1,4 @@
 extern crate rlua;
-extern crate rsystem;
 extern crate version;
 #[macro_use]
 extern crate lazy_static;

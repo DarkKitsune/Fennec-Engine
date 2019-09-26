@@ -7,7 +7,6 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rsystem = { path = "../rsystem" }
 rlua = "0.16.3"
 version = "3.0.0"
 ash = "0.29.0"

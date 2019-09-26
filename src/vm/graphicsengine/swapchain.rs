@@ -40,14 +40,14 @@ impl Swapchain {
             .find(|e| {
                 e.format == PREFERRED_SURFACE_FORMAT && e.color_space == PREFERRED_COLOR_SPACE
             })
-            .map(|e| Ok(e))
+            .map(Ok)
             .unwrap_or_else(|| {
                 surface_formats
                     .iter()
                     .find(|e| e.format == PREFERRED_SURFACE_FORMAT)
-                    .map(|e| Ok(e))
+                    .map(Ok)
                     .unwrap_or_else(|| {
-                        surface_formats.iter().nth(0).ok_or_else(|| {
+                        surface_formats.get(0).ok_or_else(|| {
                             FennecError::new(
                                 "No surface formats available on this physical device... somehow?",
                             )
@@ -90,9 +90,9 @@ impl Swapchain {
         let present_mode = present_modes
             .iter()
             .find(|e| **e == PREFERRED_PRESENT_MODE)
-            .map(|e| Ok(e))
+            .map(Ok)
             .unwrap_or_else(|| {
-                present_modes.iter().nth(0).ok_or_else(|| {
+                present_modes.get(0).ok_or_else(|| {
                     FennecError::new(
                         "No present modes available on this physical device... somehow?",
                     )
@@ -103,7 +103,7 @@ impl Swapchain {
             .min_image_count(image_count)
             .image_color_space(format.color_space)
             .image_format(format.format)
-            .image_extent(resolution.clone())
+            .image_extent(resolution)
             .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_DST)
             .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
             .pre_transform(surface_capabilities.current_transform)
@@ -160,12 +160,8 @@ impl Swapchain {
                 .acquire_next_image(
                     *self.handle().handle(),
                     timeout_nanoseconds.unwrap_or(std::u64::MAX),
-                    semaphore
-                        .map(|e| *e.handle().handle())
-                        .unwrap_or(Default::default()),
-                    fence
-                        .map(|e| *e.handle().handle())
-                        .unwrap_or(Default::default()),
+                    semaphore.map(|e| *e.handle().handle()).unwrap_or_default(),
+                    fence.map(|e| *e.handle().handle()).unwrap_or_default(),
                 )
         }?
         .0)

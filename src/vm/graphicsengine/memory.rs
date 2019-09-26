@@ -26,7 +26,7 @@ impl Memory {
         let allocate_info = vk::MemoryAllocateInfo::builder()
             .memory_type_index(get_memory_type_index(
                 context_borrowed.instance(),
-                context_borrowed.physical_device(),
+                *context_borrowed.physical_device(),
                 memory_reqs.memory_type_bits,
                 vk::MemoryPropertyFlags::DEVICE_LOCAL,
             )?)
@@ -58,13 +58,13 @@ impl VKObject<vk::DeviceMemory> for Memory {
 /// Finds the index of a memory type that fits the given requirements
 fn get_memory_type_index(
     instance: &ash::Instance,
-    physical_device: &vk::PhysicalDevice,
+    physical_device: vk::PhysicalDevice,
     type_bits: u32,
     properties: vk::MemoryPropertyFlags,
 ) -> Result<u32, FennecError> {
     // Enumerate physical device memory properties
     let memory_properties =
-        unsafe { instance.get_physical_device_memory_properties(*physical_device) };
+        unsafe { instance.get_physical_device_memory_properties(physical_device) };
     // Count number of memory properties
     let count = memory_properties.memory_type_count;
     // Return index of memory properties matching required properties

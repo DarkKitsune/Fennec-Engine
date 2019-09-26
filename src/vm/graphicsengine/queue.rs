@@ -24,8 +24,8 @@ impl QueueFamilyCollection {
     pub fn new(
         entry: &Entry,
         instance: &Instance,
-        device: &vk::PhysicalDevice,
-        surface: &vk::SurfaceKHR,
+        device: vk::PhysicalDevice,
+        surface: vk::SurfaceKHR,
         families: Vec<vk::QueueFamilyProperties>,
     ) -> Option<Self> {
         let surface_loader = Surface::new(entry, instance);
@@ -34,9 +34,9 @@ impl QueueFamilyCollection {
             for (index, ref info) in families.iter().enumerate() {
                 let good_queue_family = unsafe {
                     surface_loader.get_physical_device_surface_support(
-                        *device,
+                        device,
                         index as u32,
-                        *surface,
+                        surface,
                     )
                 };
                 if good_queue_family {
@@ -55,9 +55,9 @@ impl QueueFamilyCollection {
                 let good_queue_family = info.queue_flags.contains(vk::QueueFlags::GRAPHICS)
                     && unsafe {
                         surface_loader.get_physical_device_surface_support(
-                            *device,
+                            device,
                             index as u32,
-                            *surface,
+                            surface,
                         )
                     };
                 if good_queue_family {
@@ -85,9 +85,9 @@ impl QueueFamilyCollection {
             None
         })()?;
         Some(Self {
-            present: present,
-            graphics: graphics,
-            transfer: transfer,
+            present,
+            graphics,
+            transfer,
         })
     }
 
@@ -171,9 +171,9 @@ impl QueueFamily {
     /// QueueFamily factory method
     fn new(kind: QueueKind, index: u32, queue_count: u32) -> Self {
         Self {
-            kind: kind,
-            index: index,
-            queue_count: queue_count,
+            kind,
+            index,
+            queue_count,
             queues: None,
             command_pools: None,
         }
@@ -331,7 +331,7 @@ impl Queue {
                                     .map(|e| e.1)
                                     .collect::<Vec<vk::PipelineStageFlags>>()
                             })
-                            .unwrap_or_else(|| Vec::new()),
+                            .unwrap_or_else(Vec::new),
                     )
                     .wait_semaphores(
                         &wait_semaphores
@@ -340,7 +340,7 @@ impl Queue {
                                     .map(|e| *(e.0).handle().handle())
                                     .collect::<Vec<vk::Semaphore>>()
                             })
-                            .unwrap_or_else(|| Vec::new()),
+                            .unwrap_or_else(Vec::new),
                     )
                     .signal_semaphores(
                         &signal_semaphores
@@ -349,7 +349,7 @@ impl Queue {
                                     .map(|e| *e.handle().handle())
                                     .collect::<Vec<vk::Semaphore>>()
                             })
-                            .unwrap_or_else(|| Vec::new()),
+                            .unwrap_or_else(Vec::new),
                     )
                     .command_buffers(
                         &command_buffers
@@ -358,7 +358,7 @@ impl Queue {
                                     .map(|e| *e.handle().handle())
                                     .collect::<Vec<vk::CommandBuffer>>()
                             })
-                            .unwrap_or_else(|| Vec::new()),
+                            .unwrap_or_else(Vec::new),
                     )
                     .build()],
                 fence.map(|e| *e.handle().handle()).unwrap_or_default(),
@@ -396,8 +396,8 @@ impl CommandPoolCollection {
         let mut long_term = CommandPool::new(context, family, false)?;
         long_term.set_name(&format!("{:?} command pool (long-term)", family.kind()))?;
         Ok(Self {
-            transient: transient,
-            long_term: long_term,
+            transient,
+            long_term,
         })
     }
 
@@ -473,8 +473,8 @@ impl CommandPool {
         let command_buffers = {
             let context = self.context_mut().clone();
             let mut buffers = CommandBuffer::new(&context, self, count)?;
-            for i in 0..buffers.len() {
-                buffers[i].set_name(&format!("{} {} {}", self.name(), key, i))?;
+            for (i, buffer) in buffers.iter_mut().enumerate() {
+                buffer.set_name(&format!("{} {} {}", self.name(), key, i))?;
             }
             buffers
         };
@@ -593,7 +593,7 @@ impl CommandBuffer {
         self.writing = true;
         Ok(CommandBufferWriter {
             command_buffer: self,
-            context: context,
+            context,
         })
     }
 }

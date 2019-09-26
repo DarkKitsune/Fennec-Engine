@@ -68,8 +68,8 @@ impl GraphicsEngine {
                 .long_term_mut();
             long_term_pool.create_command_buffers("clear", swapchain.images().len() as u32)?;
             let mut buffers = long_term_pool.command_buffers_mut("clear")?;
-            for i in 0..buffers.len() {
-                let writer = buffers[i].begin(false, true)?;
+            for (i, buffer) in buffers.iter_mut().enumerate() {
+                let writer = buffer.begin(false, true)?;
                 let clear_color = vk::ClearColorValue {
                     float32: [0.5, 0.7, 1.0, 1.0],
                 };
@@ -121,11 +121,11 @@ impl GraphicsEngine {
         }
         // Return the graphics engine
         Ok(Self {
-            context: context,
-            queue_family_collection: queue_family_collection,
-            swapchain: swapchain,
-            image_available_semaphore: image_available_semaphore,
-            draw_finished_semaphores: draw_finished_semaphores,
+            context,
+            queue_family_collection,
+            swapchain,
+            image_available_semaphore,
+            draw_finished_semaphores,
         })
     }
 
@@ -227,12 +227,12 @@ impl Context {
     ) -> Result<Self, FennecError> {
         Ok(Self {
             window: window.clone(),
-            functions: functions,
-            instance: instance,
-            debug_report_callback: debug_report_callback,
-            surface: surface,
-            physical_device: physical_device,
-            logical_device: logical_device,
+            functions,
+            instance,
+            debug_report_callback,
+            surface,
+            physical_device,
+            logical_device,
         })
     }
 
@@ -291,9 +291,9 @@ impl Functions {
         device_extensions: DeviceExtensions,
     ) -> Self {
         Self {
-            entry: entry,
-            instance_extensions: instance_extensions,
-            device_extensions: device_extensions,
+            entry,
+            instance_extensions,
+            device_extensions,
         }
     }
 
@@ -459,7 +459,7 @@ fn validate_instance_extension_availability(
 ) -> Result<Vec<&'static CStr>, FennecError> {
     let available = entry.enumerate_instance_extension_properties()?;
     let mut ret = Vec::new();
-    for extension in extensions.into_iter() {
+    for extension in extensions.iter() {
         let name_string = (*extension)
             .to_str()
             .map_err(|err| {
@@ -469,7 +469,7 @@ fn validate_instance_extension_availability(
                 )
             })?
             .to_owned();
-        if available
+        let unavailable = available
             .iter()
             .map(|e| {
                 let mut first_zero = true;
@@ -510,8 +510,8 @@ fn validate_instance_extension_availability(
             })
             .handle_results()?
             .find(|e| *e)
-            .is_none()
-        {
+            .is_none();
+        if unavailable {
             return Err(FennecError::new(format!(
                 "Instance extension {:?} is not available",
                 *extension
@@ -566,13 +566,13 @@ fn create_surface(
 fn choose_physical_device(
     entry: &Entry,
     instance: &Instance,
-    surface: &vk::SurfaceKHR,
+    surface: vk::SurfaceKHR,
 ) -> Result<(vk::PhysicalDevice, QueueFamilyCollection), FennecError> {
     Ok(unsafe { instance.enumerate_physical_devices()? }
         .iter()
         .filter_map(|device| unsafe {
             let families = instance.get_physical_device_queue_family_properties(*device);
-            QueueFamilyCollection::new(entry, instance, device, surface, families)
+            QueueFamilyCollection::new(entry, instance, *device, surface, families)
                 .map(|collection| (*device, collection))
         })
         .nth(0)
@@ -586,7 +586,7 @@ fn choose_physical_device(
 /// Creates a logical device
 fn create_logical_device(
     instance: &Instance,
-    physical_device: &vk::PhysicalDevice,
+    physical_device: vk::PhysicalDevice,
     queue_family_collection: &QueueFamilyCollection,
 ) -> Result<Device, FennecError> {
     let extensions = [
@@ -612,7 +612,7 @@ fn create_logical_device(
         .enabled_features(&features)
         .build();
     println!("{:?}", device_create_info);
-    let device = unsafe { instance.create_device(*physical_device, &device_create_info, None)? };
+    let device = unsafe { instance.create_device(physical_device, &device_create_info, None)? };
     Ok(device)
 }
 
@@ -633,10 +633,10 @@ fn create_context(
     let surface = create_surface(&instance_extensions, &window_borrowed)?;
     // Choose a physical device to use and create a queue family collection
     let (physical_device, queue_family_collection) =
-        choose_physical_device(&entry, &instance, &surface)?;
+        choose_physical_device(&entry, &instance, surface)?;
     // Create logical device
     let logical_device =
-        create_logical_device(&instance, &physical_device, &queue_family_collection)?;
+        create_logical_device(&instance, physical_device, &queue_family_collection)?;
     // Load device extensions
     let device_extensions = DeviceExtensions::new(&instance, &logical_device);
     // Create context wrapping all of this stuff

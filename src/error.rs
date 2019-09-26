@@ -49,7 +49,7 @@ impl Display for FennecError {
         match possible_cause {
             Some(cause) => {
                 let cause_desc = self.description();
-                if cause_desc.len() > 0 {
+                if !cause_desc.is_empty() {
                     write!(f, "{}: {}", self.description(), cause)?;
                 } else {
                     write!(f, "{}", self.description())?;

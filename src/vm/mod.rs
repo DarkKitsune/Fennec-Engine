@@ -24,9 +24,9 @@ impl VM {
         script_engine.register_core_libraries()?;
         let graphics_engine = GraphicsEngine::new(&window)?;
         Ok(Self {
-            script_engine: script_engine,
-            graphics_engine: graphics_engine,
-            window: window,
+            script_engine,
+            graphics_engine,
+            window,
         })
     }
 
@@ -70,17 +70,10 @@ impl VM {
                 let mut events = Vec::new();
                 event_loop.poll_events(|ev| events.push(ev));
                 for ev in events {
-                    match ev {
-                        Event::WindowEvent {
-                            event,
-                            window_id: _,
-                        } => match event {
-                            WindowEvent::CloseRequested => {
-                                running = false;
-                            }
-                            _ => (),
-                        },
-                        _ => (),
+                    if let Event::WindowEvent { event, .. } = ev {
+                        if let WindowEvent::CloseRequested = event {
+                            running = false;
+                        }
                     }
                 }
             }

@@ -35,7 +35,7 @@ where
             items.push(MaybeUninit::new(item?));
         }
         Ok(IteratorOk {
-            items: items,
+            items,
             current: 0usize,
         })
     }
