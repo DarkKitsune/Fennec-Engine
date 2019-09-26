@@ -21,29 +21,19 @@ impl Image2D {
     /// ``context``: Graphics context\
     /// ``extent``: The dimensions of the image\
     /// ``usage``: How the image will be used\
-    /// ``flags``: Image creation flags *(default=Default)*\
-    // TODO: ^ clarify this ^
     /// ``format``: The pixel format of the image *(default=B8G8R8A8_UNORM)*\
-    /// ``simultaneous_use``: Whether the image can be used by multiple queue families? *(default=false)*\
-    // TODO: ^ clarify this ^
     /// ``initial_layout``: Initial layout of the image after creation *(default=GENERAL)*\
-    /// ``mip_levels``: Number of mipmap levels *(default=1)*\
-    /// ``layers``: Number of array layers *(default=1)*
+    /// ``advanced_settings``: Advanced creation settings
     pub fn new_2d(
         context: &Rc<RefCell<Context>>,
         extent: Extent2D,
         usage: ImageUsageFlags,
-        flags: Option<ImageCreateFlags>,
         format: Option<Format>,
-        simultaneous_use: Option<bool>,
         initial_layout: Option<ImageLayout>,
-        mip_levels: Option<u32>,
-        layers: Option<u32>,
-        sample_count: Option<SampleCountFlags>,
-        image_tiling: Option<ImageTiling>,
+        advanced_settings: &AdvancedImageSettings,
     ) -> Result<Self, FennecError> {
         // Check that mip_levels is above 0 and below u32::max / 2
-        if let Some(mip_levels) = mip_levels {
+        if let Some(mip_levels) = advanced_settings.mip_levels {
             if mip_levels == 0 {
                 return Err(FennecError::new(
                     "# of mipmap levels must be greater than 0",
@@ -57,7 +47,7 @@ impl Image2D {
             }
         }
         // Check that layers is above 0 and below u32::max / 2
-        if let Some(layers) = layers {
+        if let Some(layers) = advanced_settings.layers {
             if layers == 0 {
                 return Err(FennecError::new("# of layers must be greater than 0"));
             }
@@ -70,7 +60,7 @@ impl Image2D {
         }
         // Set image create info
         let create_info = vk::ImageCreateInfo::builder()
-            .flags(flags.unwrap_or_default())
+            .flags(advanced_settings.flags.unwrap_or_default())
             .image_type(vk::ImageType::TYPE_2D)
             .format(format.unwrap_or(Format::B8G8R8A8_UNORM))
             .extent(vk::Extent3D {
@@ -78,12 +68,20 @@ impl Image2D {
                 height: extent.height,
                 depth: 1,
             })
-            .mip_levels(mip_levels.unwrap_or(1))
-            .array_layers(layers.unwrap_or(1))
-            .tiling(image_tiling.unwrap_or(ImageTiling::OPTIMAL))
-            .samples(sample_count.unwrap_or(SampleCountFlags::TYPE_1))
+            .mip_levels(advanced_settings.mip_levels.unwrap_or(1))
+            .array_layers(advanced_settings.layers.unwrap_or(1))
+            .tiling(
+                advanced_settings
+                    .image_tiling
+                    .unwrap_or(ImageTiling::OPTIMAL),
+            )
+            .samples(
+                advanced_settings
+                    .sample_count
+                    .unwrap_or(SampleCountFlags::TYPE_1),
+            )
             .usage(usage)
-            .sharing_mode(if simultaneous_use.unwrap_or(false) {
+            .sharing_mode(if advanced_settings.simultaneous_use.unwrap_or(false) {
                 vk::SharingMode::CONCURRENT
             } else {
                 vk::SharingMode::EXCLUSIVE
@@ -134,6 +132,24 @@ impl Image for Image2D {
     fn memory(&self) -> Option<&Memory> {
         Some(self.memory())
     }
+}
+
+/// Advanced image settings to be used in image factory methods
+/// ``flags``: Image creation flags *(default=Default)*\
+// TODO: ^ clarify this ^
+/// ``simultaneous_use``: Whether the image can be used by multiple queue families? *(default=false)*\
+// TODO: ^ clarify this ^
+/// ``mip_levels``: Number of mipmap levels *(default=1)*\
+/// ``layers``: Number of array layers *(default=1)*\
+/// ``sample_count``: Number of samples per pixel
+/// ``image_tiling``: Tiling arrangement for image data
+pub struct AdvancedImageSettings {
+    pub flags: Option<ImageCreateFlags>,
+    pub simultaneous_use: Option<bool>,
+    pub mip_levels: Option<u32>,
+    pub layers: Option<u32>,
+    pub sample_count: Option<SampleCountFlags>,
+    pub image_tiling: Option<ImageTiling>,
 }
 
 /// Trait for Vulkan images
