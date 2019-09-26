@@ -30,8 +30,9 @@ impl Image2D {
         usage: ImageUsageFlags,
         format: Option<Format>,
         initial_layout: Option<ImageLayout>,
-        advanced_settings: &AdvancedImageSettings,
+        advanced_settings: Option<AdvancedImageSettings>,
     ) -> Result<Self, FennecError> {
+        let advanced_settings = advanced_settings.unwrap_or_default();
         // Check that mip_levels is above 0 and below u32::max / 2
         if let Some(mip_levels) = advanced_settings.mip_levels {
             if mip_levels == 0 {
@@ -143,6 +144,7 @@ impl Image for Image2D {
 /// ``layers``: Number of array layers *(default=1)*\
 /// ``sample_count``: Number of samples per pixel
 /// ``image_tiling``: Tiling arrangement for image data
+#[derive(Default, Copy, Clone)]
 pub struct AdvancedImageSettings {
     pub flags: Option<ImageCreateFlags>,
     pub simultaneous_use: Option<bool>,
