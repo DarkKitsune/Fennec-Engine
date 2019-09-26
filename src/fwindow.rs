@@ -1,5 +1,5 @@
 use crate::error::FennecError;
-use glutin::{EventsLoop, Window, WindowBuilder};
+use glutin::{Event, EventsLoop, Window, WindowBuilder};
 
 /// A Fennec window
 pub struct FWindow {
@@ -56,5 +56,12 @@ impl FWindow {
             (client_size.width * hidpi_factor) as u32,
             (client_size.height * hidpi_factor) as u32,
         ))
+    }
+
+    /// Poll Glutin events
+    pub fn poll_events(&mut self) -> Result<Vec<Event>, FennecError> {
+        let mut events = Vec::new();
+        self.event_loop_mut().poll_events(|ev| events.push(ev));
+        Ok(events)
     }
 }

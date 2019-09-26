@@ -55,31 +55,25 @@ impl VM {
         &self.window
     }
 
-    /// Get the window
-    pub fn window_mut(&mut self) -> &mut Rc<RefCell<FWindow>> {
-        &mut self.window
-    }
-
     /// Start the VM
     pub fn start(&mut self) -> Result<(), FennecError> {
         let mut running = true;
         while running {
-            {
-                let mut window = self.window.try_borrow_mut()?;
-                let event_loop = window.event_loop_mut();
-                let mut events = Vec::new();
-                event_loop.poll_events(|ev| events.push(ev));
-                for ev in events {
-                    if let Event::WindowEvent { event, .. } = ev {
-                        if let WindowEvent::CloseRequested = event {
-                            running = false;
-                        }
-                    }
-                }
-            }
+            self.do_events(&mut running)?;
             self.graphics_engine_mut().draw()?;
         }
         self.graphics_engine().stop()?;
+        Ok(())
+    }
+
+    pub fn do_events(&mut self, running: &mut bool) -> Result<(), FennecError> {
+        for ev in self.window().try_borrow_mut()?.poll_events()? {
+            if let Event::WindowEvent { event, .. } = ev {
+                if let WindowEvent::CloseRequested = event {
+                    *running = false;
+                }
+            }
+        }
         Ok(())
     }
 }

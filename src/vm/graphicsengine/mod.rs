@@ -572,8 +572,14 @@ fn choose_physical_device(
         .iter()
         .filter_map(|device| unsafe {
             let families = instance.get_physical_device_queue_family_properties(*device);
-            QueueFamilyCollection::new(entry, instance, *device, surface, families)
-                .map(|collection| (*device, collection))
+            if let Ok(success) =
+                QueueFamilyCollection::new(entry, instance, *device, surface, families)
+                    .map(|collection| (*device, collection))
+            {
+                Some(success)
+            } else {
+                None
+            }
         })
         .nth(0)
         .ok_or_else(|| {

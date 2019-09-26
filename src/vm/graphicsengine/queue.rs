@@ -27,64 +27,29 @@ impl QueueFamilyCollection {
         device: vk::PhysicalDevice,
         surface: vk::SurfaceKHR,
         families: Vec<vk::QueueFamilyProperties>,
-    ) -> Option<Self> {
+    ) -> Result<Self, FennecError> {
         let surface_loader = Surface::new(entry, instance);
         // Find present family queue
-        let present = (|| {
-            for (index, ref info) in families.iter().enumerate() {
-                let good_queue_family = unsafe {
+        let present = choose_family(&families, QueueKind::Present, |index, _info| unsafe {
+            surface_loader.get_physical_device_surface_support(device, index as u32, surface)
+        })?;
+        // Find graphics family queue
+        let graphics = choose_family(&families, QueueKind::Graphics, |index, info| {
+            info.queue_flags.contains(vk::QueueFlags::GRAPHICS)
+                && unsafe {
                     surface_loader.get_physical_device_surface_support(
                         device,
                         index as u32,
                         surface,
                     )
-                };
-                if good_queue_family {
-                    return Some(QueueFamily::new(
-                        QueueKind::Present,
-                        index as u32,
-                        info.queue_count,
-                    ));
                 }
-            }
-            None
-        })()?;
-        // Find graphics family queue
-        let graphics = (|| {
-            for (index, ref info) in families.iter().enumerate() {
-                let good_queue_family = info.queue_flags.contains(vk::QueueFlags::GRAPHICS)
-                    && unsafe {
-                        surface_loader.get_physical_device_surface_support(
-                            device,
-                            index as u32,
-                            surface,
-                        )
-                    };
-                if good_queue_family {
-                    return Some(QueueFamily::new(
-                        QueueKind::Graphics,
-                        index as u32,
-                        info.queue_count,
-                    ));
-                }
-            }
-            None
-        })()?;
+        })?;
         // Find transfer family queue
-        let transfer = (|| {
-            for (index, ref info) in families.iter().enumerate() {
-                let good_queue_family = info.queue_flags.contains(vk::QueueFlags::TRANSFER);
-                if good_queue_family {
-                    return Some(QueueFamily::new(
-                        QueueKind::Transfer,
-                        index as u32,
-                        info.queue_count,
-                    ));
-                }
-            }
-            None
-        })()?;
-        Some(Self {
+        let transfer = choose_family(&families, QueueKind::Transfer, |_index, info| {
+            info.queue_flags.contains(vk::QueueFlags::TRANSFER)
+        })?;
+        // Return the queue family collection
+        Ok(Self {
             present,
             graphics,
             transfer,
@@ -128,24 +93,7 @@ impl QueueFamilyCollection {
             (self.graphics().index(), self.graphics().queue_priorities()),
             (self.transfer().index(), self.transfer().queue_priorities()),
         ];
-        let mut i = 0;
-        while i < priorities.len() {
-            let mut j = i + 1;
-            while j < priorities.len() {
-                if priorities[j].0 == priorities[i].0 {
-                    if priorities[j].1 <= priorities[i].1 {
-                        priorities.remove(j);
-                        j -= 1;
-                    } else {
-                        priorities.remove(i);
-                        i -= 1;
-                        break;
-                    }
-                }
-                j += 1;
-            }
-            i += 1;
-        }
+        reduce_family_priorities_to_unique(&mut priorities);
         priorities
     }
 
@@ -155,6 +103,50 @@ impl QueueFamilyCollection {
         self.graphics_mut().setup(context)?;
         self.transfer_mut().setup(context)?;
         Ok(())
+    }
+}
+
+/// Chooses a family that fits specified requirements
+fn choose_family<F>(
+    families: &[vk::QueueFamilyProperties],
+    kind: QueueKind,
+    func: F,
+) -> Result<QueueFamily, FennecError>
+where
+    F: Fn(u32, &vk::QueueFamilyProperties) -> bool,
+{
+    for (index, ref info) in families.iter().enumerate() {
+        let good_queue_family = func(index as u32, *info);
+        if good_queue_family {
+            return Ok(QueueFamily::new(kind, index as u32, info.queue_count));
+        }
+    }
+    Err(FennecError::new(format!(
+        "Could not choose a {:?} queue family that meets the requirements",
+        kind
+    )))
+}
+
+/// Takes a list of queue family indices and queue priorities and reduces it
+///     down to only unique family indices
+fn reduce_family_priorities_to_unique(priorities: &mut Vec<(u32, Vec<f32>)>) {
+    let mut first_index = 0;
+    while first_index < priorities.len() {
+        let mut second_index = first_index + 1;
+        while second_index < priorities.len() {
+            if priorities[second_index].0 == priorities[first_index].0 {
+                if priorities[second_index].1 <= priorities[first_index].1 {
+                    priorities.remove(second_index);
+                    second_index -= 1;
+                } else {
+                    priorities.remove(first_index);
+                    first_index -= 1;
+                    break;
+                }
+            }
+            second_index += 1;
+        }
+        first_index += 1;
     }
 }
 
