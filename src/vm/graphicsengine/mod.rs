@@ -1,6 +1,10 @@
+pub mod framebuffer;
 pub mod image;
+pub mod imageview;
 pub mod memory;
+pub mod pipeline;
 pub mod queue;
+pub mod renderpass;
 pub mod swapchain;
 pub mod sync;
 pub mod vkobject;
@@ -16,15 +20,17 @@ use ash::version::{DeviceV1_0, EntryV1_0, InstanceV1_0};
 use ash::vk;
 use ash::{Device, Entry, Instance};
 use colored::Colorize;
+use framebuffer::Framebuffer;
 use glutin::os::windows::WindowExt;
 use image::Image;
 use queue::QueueFamilyCollection;
+use renderpass::{RenderPass, Subpass};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_void};
 use std::rc::Rc;
 use swapchain::Swapchain;
-use sync::Semaphore;
+use sync::{Fence, Semaphore};
 use vkobject::VKObject;
 use winapi::um::libloaderapi::GetModuleHandleW;
 
@@ -34,7 +40,7 @@ pub struct GraphicsEngine {
     queue_family_collection: QueueFamilyCollection,
     swapchain: Swapchain,
     image_available_semaphore: Semaphore,
-    draw_finished_semaphores: Vec<Semaphore>,
+    render_test: RenderTest,
 }
 
 impl GraphicsEngine {
@@ -50,158 +56,190 @@ impl GraphicsEngine {
         // Create and name image_available_semaphore
         let mut image_available_semaphore = Semaphore::new(&context)?;
         image_available_semaphore.set_name("Image available semaphore")?;
-        // Create and name semaphores in draw_finished_semaphores
-        let draw_finished_semaphores = (0..swapchain.images().len())
-            .map(|idx| {
-                let mut draw_finished_semaphore = Semaphore::new(&context)?;
-                draw_finished_semaphore.set_name(&format!("Draw finished semaphore {}", idx))?;
-                Ok(draw_finished_semaphore)
-            })
-            .handle_results()?
-            .collect();
-        // Create clear command buffers
-        {
-            let long_term_pool = queue_family_collection
-                .graphics_mut()
-                .command_pools_mut()
-                .unwrap()
-                .long_term_mut();
-            long_term_pool.create_command_buffers("clear", swapchain.images().len() as u32)?;
-            let mut buffers = long_term_pool.command_buffers_mut("clear")?;
-            for (i, buffer) in buffers.iter_mut().enumerate() {
-                let writer = buffer.begin(false, true)?;
-                let clear_color = vk::ClearColorValue {
-                    float32: [0.5, 0.7, 1.0, 1.0],
-                };
-                let range = vk::ImageSubresourceRange::builder()
-                    .aspect_mask(vk::ImageAspectFlags::COLOR)
-                    .base_mip_level(0)
-                    .level_count(1)
-                    .base_array_layer(0)
-                    .layer_count(1)
-                    .build();
-                let image = &swapchain.images()[i];
-                writer.pipeline_barrier(
-                    vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-                    vk::PipelineStageFlags::TRANSFER,
-                    None,
-                    None,
-                    None,
-                    Some(&[vk::ImageMemoryBarrier::builder()
-                        .image(*image.image_handle().handle())
-                        .old_layout(vk::ImageLayout::UNDEFINED)
-                        .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                        .src_access_mask(Default::default())
-                        .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-                        .subresource_range(range)
-                        .build()]),
-                )?;
-                writer.clear_color_image(
-                    image,
-                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    &clear_color,
-                    &[range],
-                )?;
-                writer.pipeline_barrier(
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-                    None,
-                    None,
-                    None,
-                    Some(&[vk::ImageMemoryBarrier::builder()
-                        .image(*image.image_handle().handle())
-                        .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                        .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
-                        .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-                        .dst_access_mask(vk::AccessFlags::MEMORY_READ)
-                        .subresource_range(range)
-                        .build()]),
-                )?;
-            }
-        }
+        // Create render test stage
+        let render_test = RenderTest::new(&context, &mut queue_family_collection, &swapchain)?;
         // Return the graphics engine
         Ok(Self {
             context,
             queue_family_collection,
             swapchain,
             image_available_semaphore,
-            draw_finished_semaphores,
+            render_test,
         })
-    }
-
-    /// Gets the graphics context associated with the graphics engine
-    pub fn context(&self) -> &Rc<RefCell<Context>> {
-        &self.context
-    }
-
-    /// Gets the graphics context associated with the graphics engine
-    pub fn context_mut(&mut self) -> &mut Rc<RefCell<Context>> {
-        &mut self.context
-    }
-
-    /// Gets the swapchain
-    pub fn swapchain(&self) -> &Swapchain {
-        &self.swapchain
-    }
-
-    /// Gets the swapchain
-    pub fn swapchain_mut(&mut self) -> &mut Swapchain {
-        &mut self.swapchain
-    }
-
-    /// Gets the queue family collection
-    pub fn queue_family_collection(&self) -> &QueueFamilyCollection {
-        &self.queue_family_collection
     }
 
     /// Executes the draw event
     pub fn draw(&mut self) -> Result<(), FennecError> {
         // Acquire next swapchain image to draw to
-        let idx = self.swapchain().acquire_next_image(
-            None,
-            Some(&self.image_available_semaphore),
+        let image_index =
+            self.swapchain
+                .acquire_next_image(None, Some(&self.image_available_semaphore), None)?;
+        // Submit render test stage
+        let render_test_finished = self.render_test.submit(
+            (
+                &self.image_available_semaphore,
+                vk::PipelineStageFlags::TOP_OF_PIPE,
+            ),
+            &self.queue_family_collection,
+            image_index,
             None,
         )?;
-        // Submit clear buffer
-        let queue_family_collection = self.queue_family_collection();
-        let queue_family = queue_family_collection.graphics();
-        queue_family
-            .queue_of_priority(1.0)
-            .ok_or_else(|| FennecError::new("No transfer queues exist"))?
-            .submit(
-                Some(&[queue_family
-                    .command_pools()
-                    .unwrap()
-                    .long_term()
-                    .command_buffers("clear")?[idx as usize]]),
-                Some(&[(
-                    &self.image_available_semaphore,
-                    vk::PipelineStageFlags::TOP_OF_PIPE,
-                )]),
-                Some(&[&self.draw_finished_semaphores[idx as usize]]),
-                None,
-            )?;
         // Present swapchain image
-        let present_queue = queue_family_collection
+        let present_queue = self
+            .queue_family_collection
             .present()
             .queue_of_priority(1.0)
             .ok_or_else(|| FennecError::new("No present queues exist"))?;
-        self.swapchain().present(
-            idx,
-            present_queue,
-            &self.draw_finished_semaphores[idx as usize],
-        )?;
+        self.swapchain
+            .present(image_index, present_queue, render_test_finished)?;
         Ok(())
     }
 
     pub fn stop(&self) -> Result<(), FennecError> {
         unsafe {
-            self.context()
+            self.context
                 .try_borrow()?
                 .logical_device()
                 .device_wait_idle()
         }?;
         Ok(())
+    }
+}
+
+pub struct RenderTest {
+    pub render_pass: RenderPass,
+    pub framebuffers: Vec<Framebuffer>,
+    pub finished_semaphore: Semaphore,
+}
+
+impl RenderTest {
+    const COMMAND_BUFFERS_NAME: &'static str = "render_test";
+
+    pub fn new(
+        context: &Rc<RefCell<Context>>,
+        queue_family_collection: &mut QueueFamilyCollection,
+        swapchain: &Swapchain,
+    ) -> Result<Self, FennecError> {
+        // Create render finished semaphore
+        let mut finished_semaphore = Semaphore::new(context)?;
+        finished_semaphore.set_name("RenderTest finished semaphore")?;
+        // Create render pass and framebuffers
+        let attachments = [vk::AttachmentDescription::builder()
+            .format(swapchain.format())
+            .initial_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::STORE)
+            .samples(vk::SampleCountFlags::TYPE_1)
+            .build()];
+        let subpasses = [Subpass {
+            input_attachments: vec![],
+            color_attachments: vec![vk::AttachmentReference::builder()
+                .attachment(0)
+                .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .build()],
+            depth_stencil_attachment: None,
+            preserve_attachments: vec![],
+            dependencies: vec![],
+        }];
+        let mut render_pass = RenderPass::new(context, &attachments, &subpasses)?;
+        render_pass.set_name("RenderTest render pass")?;
+        // TODO: remove unnecessary maps and unnecessary lambdas in maps from entire project
+        let framebuffers = swapchain
+            .images()
+            .iter()
+            .enumerate()
+            .map(|(index, image)| {
+                let mut view = image.view(&image.range_color_basic(), None)?;
+                view.set_name(&format!("RenderTest framebuffer {} image view", index))?;
+                let mut framebuffer = Framebuffer::new(context, &render_pass, vec![view])?;
+                framebuffer.set_name(&format!("RenderTest framebuffer {}", index))?;
+                Ok(framebuffer)
+            })
+            .handle_results()?
+            .collect::<Vec<Framebuffer>>();
+        // Create command buffers
+        let graphics_long_term = queue_family_collection
+            .graphics_mut()
+            .command_pools_mut()
+            .unwrap()
+            .long_term_mut();
+        let mut buffers = graphics_long_term
+            .create_command_buffers(Self::COMMAND_BUFFERS_NAME, swapchain.images().len() as u32)?;
+        for (i, buffer) in buffers.iter_mut().enumerate() {
+            let image = &swapchain.images()[i];
+            let writer = buffer.begin(false, true)?;
+            writer.pipeline_barrier(
+                vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                None,
+                None,
+                None,
+                Some(&[vk::ImageMemoryBarrier::builder()
+                    .image(*image.image_handle().handle())
+                    .old_layout(vk::ImageLayout::UNDEFINED)
+                    .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .src_access_mask(Default::default())
+                    .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+                    .subresource_range(image.range_color_basic())
+                    .build()]),
+            )?;
+            let pass = writer.begin_render_pass(
+                &render_pass,
+                &framebuffers[i],
+                vk::Rect2D {
+                    offset: vk::Offset2D { x: 0, y: 0 },
+                    extent: swapchain.extent(),
+                },
+                &[vk::ClearValue {
+                    color: vk::ClearColorValue {
+                        float32: [0.5, 0.7, 0.9, 1.0],
+                    },
+                }],
+            )?;
+            pass.end();
+            writer.pipeline_barrier(
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+                None,
+                None,
+                None,
+                Some(&[vk::ImageMemoryBarrier::builder()
+                    .image(*image.image_handle().handle())
+                    .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+                    .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+                    .dst_access_mask(vk::AccessFlags::MEMORY_READ)
+                    .subresource_range(image.range_color_basic())
+                    .build()]),
+            )?;
+        }
+        Ok(Self {
+            finished_semaphore,
+            render_pass,
+            framebuffers,
+        })
+    }
+
+    pub fn submit(
+        &self,
+        wait_for: (&Semaphore, vk::PipelineStageFlags),
+        queue_family_collection: &QueueFamilyCollection,
+        image_index: u32,
+        signaled_fence: Option<&Fence>,
+    ) -> Result<&Semaphore, FennecError> {
+        let graphics_family = queue_family_collection.graphics();
+        let graphics_long_term = graphics_family.command_pools().unwrap().long_term();
+        graphics_family.queue_of_priority(1.0).unwrap().submit(
+            Some(&[
+                graphics_long_term.command_buffers(Self::COMMAND_BUFFERS_NAME)?
+                    [image_index as usize],
+            ]),
+            Some(&[wait_for]),
+            Some(&[&self.finished_semaphore]),
+            signaled_fence,
+        )?;
+        Ok(&self.finished_semaphore)
     }
 }
 

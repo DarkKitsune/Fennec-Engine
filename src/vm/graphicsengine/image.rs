@@ -1,3 +1,4 @@
+use super::imageview::ImageView;
 use super::memory::Memory;
 use super::vkobject::{VKHandle, VKObject};
 use super::Context;
@@ -11,6 +12,8 @@ use std::rc::Rc;
 pub struct Image2D {
     image: VKHandle<vk::Image>,
     memory: Memory,
+    format: vk::Format,
+    extent: vk::Extent2D,
 }
 
 impl Image2D {
@@ -28,6 +31,7 @@ impl Image2D {
         initial_layout: Option<vk::ImageLayout>,
         advanced_settings: Option<AdvancedImageSettings>,
     ) -> Result<Self, FennecError> {
+        let format = format.unwrap_or(vk::Format::B8G8R8A8_UNORM);
         let advanced_settings = advanced_settings.unwrap_or_default();
         // Check that mip_levels is greater than 0 and below u32::MAX / 2
         if let Some(mip_levels) = advanced_settings.mip_levels {
@@ -79,7 +83,7 @@ impl Image2D {
         let create_info = vk::ImageCreateInfo::builder()
             .flags(advanced_settings.flags.unwrap_or_default())
             .image_type(vk::ImageType::TYPE_2D)
-            .format(format.unwrap_or(vk::Format::B8G8R8A8_UNORM))
+            .format(format)
             .extent(vk::Extent3D {
                 width: extent.width,
                 height: extent.height,
@@ -118,12 +122,9 @@ impl Image2D {
         Ok(Self {
             image: VKHandle::new(context, image, false),
             memory,
+            format,
+            extent,
         })
-    }
-
-    /// Gets the backing memory of the image
-    pub fn memory(&self) -> &Memory {
-        &self.memory
     }
 }
 
@@ -147,11 +148,37 @@ impl Image for Image2D {
     }
 
     fn memory(&self) -> Option<&Memory> {
-        Some(self.memory())
+        Some(&self.memory)
+    }
+
+    fn format(&self) -> vk::Format {
+        self.format
+    }
+
+    fn image_view_type(&self) -> vk::ImageViewType {
+        vk::ImageViewType::TYPE_2D
+    }
+
+    fn extent(&self) -> vk::Extent3D {
+        vk::Extent3D {
+            width: self.extent.width,
+            height: self.extent.height,
+            depth: 1,
+        }
+    }
+
+    fn view(
+        &self,
+        range: &vk::ImageSubresourceRange,
+        components: Option<vk::ComponentMapping>,
+    ) -> Result<ImageView, FennecError> {
+        let mut view = ImageView::new(self.image_handle().context(), self, range, components)?;
+        view.set_name(&format!("view into {}", self.name()))?;
+        Ok(view)
     }
 }
 
-/// Advanced image settings to be used in image factory methods
+/// Advanced settings to be used in image factory methods
 #[derive(Default, Copy, Clone)]
 pub struct AdvancedImageSettings {
     // TODO: v clarify this v
@@ -176,4 +203,56 @@ pub trait Image {
     fn image_handle(&self) -> &VKHandle<vk::Image>;
     /// Gets the backing memory of the image
     fn memory(&self) -> Option<&Memory>;
+    /// Gets the pixel format of the image
+    fn format(&self) -> vk::Format;
+    /// Get the correct type for a view of the image
+    fn image_view_type(&self) -> vk::ImageViewType;
+    /// Get the extent of the image
+    fn extent(&self) -> vk::Extent3D;
+    /// Create an ImageView of the image
+    fn view(
+        &self,
+        range: &vk::ImageSubresourceRange,
+        components: Option<vk::ComponentMapping>,
+    ) -> Result<ImageView, FennecError>;
+
+    /// Create a subresource range
+    fn range(
+        &self,
+        aspects: vk::ImageAspectFlags,
+        base_layer: u32,
+        layer_count: u32,
+        base_mip: u32,
+        mip_count: u32,
+    ) -> vk::ImageSubresourceRange {
+        vk::ImageSubresourceRange::builder()
+            .aspect_mask(aspects)
+            .base_array_layer(base_layer)
+            .layer_count(layer_count)
+            .base_mip_level(base_mip)
+            .level_count(mip_count)
+            .build()
+    }
+
+    /// Create a subresource range pointing to the color aspect of layer 0, mipmap level 0
+    fn range_color_basic(&self) -> vk::ImageSubresourceRange {
+        vk::ImageSubresourceRange::builder()
+            .aspect_mask(vk::ImageAspectFlags::COLOR)
+            .base_array_layer(0)
+            .layer_count(1)
+            .base_mip_level(0)
+            .level_count(1)
+            .build()
+    }
+
+    /// Create a subresource range pointing to the depth & stencil aspects of layer 0, mipmap level 0
+    fn range_depth_stencil_basic(&self) -> vk::ImageSubresourceRange {
+        vk::ImageSubresourceRange::builder()
+            .aspect_mask(vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL)
+            .base_array_layer(0)
+            .layer_count(1)
+            .base_mip_level(0)
+            .level_count(1)
+            .build()
+    }
 }

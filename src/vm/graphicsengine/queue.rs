@@ -1,4 +1,6 @@
+use super::framebuffer::Framebuffer;
 use super::image::Image;
+use super::renderpass::RenderPass;
 use super::sync::{Fence, Semaphore};
 use super::vkobject::{VKHandle, VKObject};
 use super::Context;
@@ -452,7 +454,7 @@ impl CommandPool {
         &mut self,
         name: impl Into<String>,
         count: u32,
-    ) -> Result<(), FennecError> {
+    ) -> Result<Vec<&mut CommandBuffer>, FennecError> {
         let key = name.into();
         {
             if self.command_buffers.contains_key(&key) {
@@ -471,7 +473,7 @@ impl CommandPool {
             buffers
         };
         self.command_buffers.insert(key.clone(), command_buffers);
-        Ok(())
+        Ok(self.command_buffers_mut(key)?)
     }
 
     /// Get the set of command buffers under the specified name
@@ -667,6 +669,33 @@ impl<'a> CommandBufferWriter<'a> {
             Ok(())
         }
     }
+
+    /// Begin a render pass, returning an ActiveRenderPass representing it
+    pub fn begin_render_pass(
+        &self,
+        render_pass: &RenderPass,
+        framebuffer: &Framebuffer,
+        render_area: vk::Rect2D,
+        clear_values: &[vk::ClearValue],
+    ) -> Result<ActiveRenderPass, FennecError> {
+        let begin_info = vk::RenderPassBeginInfo::builder()
+            .render_pass(*render_pass.handle().handle())
+            .framebuffer(*framebuffer.handle().handle())
+            .render_area(render_area)
+            .clear_values(clear_values)
+            .build();
+        unsafe {
+            self.context
+                .try_borrow()?
+                .logical_device()
+                .cmd_begin_render_pass(
+                    *self.command_buffer.handle().handle(),
+                    &begin_info,
+                    Default::default(),
+                );
+            Ok(ActiveRenderPass::new(self))
+        }
+    }
 }
 
 impl<'a> Drop for CommandBufferWriter<'a> {
@@ -679,6 +708,37 @@ impl<'a> Drop for CommandBufferWriter<'a> {
                 .logical_device()
                 .end_command_buffer(*self.command_buffer.handle().handle())
                 .unwrap();
+        }
+    }
+}
+
+/// Wrapper around a CommandBufferWriter that is writing inside of a render pass\
+/// Enables writing commands that require an active render pass
+pub struct ActiveRenderPass<'a> {
+    command_buffer_writer: &'a CommandBufferWriter<'a>,
+}
+
+impl<'a> ActiveRenderPass<'a> {
+    /// ActiveRenderPass factory method
+    pub fn new(command_buffer_writer: &'a CommandBufferWriter<'a>) -> Self {
+        Self {
+            command_buffer_writer,
+        }
+    }
+
+    /// Consume the ActiveRenderPass, ending the render pass
+    pub fn end(self) {}
+}
+
+impl<'a> Drop for ActiveRenderPass<'a> {
+    fn drop(&mut self) {
+        // End the render pass when this is dropped
+        unsafe {
+            self.command_buffer_writer
+                .context
+                .borrow()
+                .logical_device()
+                .cmd_end_render_pass(*self.command_buffer_writer.command_buffer.handle().handle());
         }
     }
 }

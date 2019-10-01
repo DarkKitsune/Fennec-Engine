@@ -1,4 +1,5 @@
 use super::image::Image;
+use super::imageview::ImageView;
 use super::memory::Memory;
 use super::queue::Queue;
 use super::sync::{Fence, Semaphore};
@@ -19,6 +20,8 @@ const PREFERRED_PRESENT_MODE: vk::PresentModeKHR = vk::PresentModeKHR::MAILBOX;
 pub struct Swapchain {
     swapchain: VKHandle<vk::SwapchainKHR>,
     swapchain_images: Vec<SwapchainImage>,
+    format: vk::Format,
+    extent: vk::Extent2D,
 }
 
 impl Swapchain {
@@ -126,7 +129,8 @@ impl Swapchain {
                 .iter()
                 .enumerate()
                 .map(|(idx, image)| {
-                    let mut wrapped = SwapchainImage::new(context, *image);
+                    let mut wrapped =
+                        SwapchainImage::new(context, *image, format.format, resolution);
                     wrapped.set_name(&format!("Swapchain image {}", idx))?;
                     Ok(wrapped)
                 })
@@ -136,6 +140,8 @@ impl Swapchain {
         Ok(Self {
             swapchain: VKHandle::new(context, swapchain, false),
             swapchain_images: images,
+            format: format.format,
+            extent: resolution,
         })
     }
 
@@ -189,6 +195,16 @@ impl Swapchain {
         }?;
         Ok(())
     }
+
+    /// Get the swapchain image format
+    pub fn format(&self) -> vk::Format {
+        self.format
+    }
+
+    /// Get the swapchain image extent
+    pub fn extent(&self) -> vk::Extent2D {
+        self.extent
+    }
 }
 
 impl VKObject<vk::SwapchainKHR> for Swapchain {
@@ -208,13 +224,22 @@ impl VKObject<vk::SwapchainKHR> for Swapchain {
 /// An image belonging to the swapchain
 pub struct SwapchainImage {
     image: VKHandle<vk::Image>,
+    format: vk::Format,
+    extent: vk::Extent2D,
 }
 
 impl SwapchainImage {
     /// SwapchainImage factory method
-    fn new(context: &Rc<RefCell<Context>>, swapchain_image: vk::Image) -> Self {
+    fn new(
+        context: &Rc<RefCell<Context>>,
+        swapchain_image: vk::Image,
+        format: vk::Format,
+        extent: vk::Extent2D,
+    ) -> Self {
         Self {
             image: VKHandle::new(context, swapchain_image, true),
+            format,
+            extent,
         }
     }
 }
@@ -240,5 +265,31 @@ impl Image for SwapchainImage {
 
     fn memory(&self) -> Option<&Memory> {
         None
+    }
+
+    fn format(&self) -> vk::Format {
+        self.format
+    }
+
+    fn image_view_type(&self) -> vk::ImageViewType {
+        vk::ImageViewType::TYPE_2D
+    }
+
+    fn extent(&self) -> vk::Extent3D {
+        vk::Extent3D {
+            width: self.extent.width,
+            height: self.extent.height,
+            depth: 1,
+        }
+    }
+
+    fn view(
+        &self,
+        range: &vk::ImageSubresourceRange,
+        components: Option<vk::ComponentMapping>,
+    ) -> Result<ImageView, FennecError> {
+        let mut view = ImageView::new(self.image_handle().context(), self, range, components)?;
+        view.set_name(&format!("view into {}", self.name()))?;
+        Ok(view)
     }
 }
