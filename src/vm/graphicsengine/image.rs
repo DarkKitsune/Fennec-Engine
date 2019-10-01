@@ -181,11 +181,9 @@ impl Image for Image2D {
 /// Advanced settings to be used in image factory methods
 #[derive(Default, Copy, Clone)]
 pub struct AdvancedImageSettings {
-    // TODO: v clarify this v
     /// Image creation flags *(default=Default)*
     pub flags: Option<vk::ImageCreateFlags>,
-    // TODO: v clarify this v
-    /// Whether the image can be used by multiple queue families? *(default=false)*
+    /// Whether the image can be used by multiple queue families concurrently *(default=false)*
     pub simultaneous_use: Option<bool>,
     /// Number of mipmap levels *(default=1)*
     pub mip_levels: Option<u32>,

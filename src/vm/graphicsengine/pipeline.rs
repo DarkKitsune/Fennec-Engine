@@ -22,9 +22,9 @@ impl GraphicsPipeline {
         topology: vk::PrimitiveTopology,
         stages: &[vk::PipelineShaderStageCreateInfo],
         viewports: &[Viewport],
-        culling_mode: CullingMode,
-        depth_mode: &DepthMode,
-        blend_mode: &BlendMode,
+        culling_mode: CullingState,
+        depth_mode: &DepthState,
+        blend_mode: &BlendState,
         advanced_settings: Option<AdvancedGraphicsPipelineSettings>,
     ) -> Result<Self, FennecError> {
         let advanced_settings = advanced_settings.unwrap_or_default();
@@ -349,7 +349,7 @@ pub struct Viewport {
 
 /// Describes a backface culling mode
 #[derive(Default, Copy, Clone)]
-pub struct CullingMode {
+pub struct CullingState {
     /// Whether backface culling is enabled
     pub enable: bool,
     /// What to consider a front face (back faces will be culled)
@@ -358,7 +358,7 @@ pub struct CullingMode {
 
 /// Describes a depth test/write mode
 #[derive(Default, Copy, Clone)]
-pub struct DepthMode {
+pub struct DepthState {
     /// Whether depth testing is enabled
     pub enable_test: bool,
     /// Whether depth writing is enabled
@@ -377,10 +377,9 @@ pub struct DepthMode {
 
 /// Describes a blend mode
 #[derive(Default, Clone)]
-pub struct BlendMode {
+pub struct BlendState {
     /// Enable use of the logic op
     pub enable_logic_op: bool,
-    // TODO: v Clarify this v
     /// The logic op
     pub logic_op: vk::LogicOp,
     /// Blend function to use for each corresponding color attachment in a subpass

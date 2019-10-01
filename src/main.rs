@@ -11,6 +11,7 @@ pub mod error;
 pub mod fwindow;
 pub mod iteratorext;
 pub mod log;
+pub mod paths;
 pub mod vm;
 
 use fwindow::FWindow;

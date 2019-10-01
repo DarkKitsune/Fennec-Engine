@@ -121,3 +121,15 @@ impl From<std::ffi::NulError> for FennecError {
         FennecError::from_error("Could not create CString", Box::new(error))
     }
 }
+
+impl From<std::io::Error> for FennecError {
+    fn from(error: std::io::Error) -> FennecError {
+        FennecError::from_error("IO error occurred", Box::new(error))
+    }
+}
+
+impl From<std::string::FromUtf8Error> for FennecError {
+    fn from(error: std::string::FromUtf8Error) -> FennecError {
+        FennecError::from_error("Could not convert string from UTF-8", Box::new(error))
+    }
+}
