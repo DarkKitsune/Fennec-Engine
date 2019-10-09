@@ -1,68 +1,164 @@
 use super::framebuffer::Framebuffer;
 use super::image::Image;
+use super::pipeline::{
+    BlendState, CullingState, DepthState, GraphicsPipeline, GraphicsStates, Viewport,
+};
 use super::queue::QueueFamilyCollection;
 use super::renderpass::{RenderPass, Subpass};
+use super::shadermodule::ShaderModule;
 use super::swapchain::Swapchain;
 use super::sync::{Fence, Semaphore};
 use super::vkobject::VKObject;
 use super::Context;
 use crate::error::FennecError;
 use crate::iteratorext::IteratorResults;
+use crate::paths;
 use ash::vk;
 use std::cell::RefCell;
+use std::ffi::CString;
+use std::fs::File;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 pub struct RenderTest {
     pub render_pass: RenderPass,
     pub framebuffers: Vec<Framebuffer>,
     pub finished_semaphore: Semaphore,
+    pub vertex_shader: ShaderModule,
+    pub fragment_shader: ShaderModule,
+    pub pipeline: GraphicsPipeline,
 }
 
 impl RenderTest {
     const COMMAND_BUFFERS_NAME: &'static str = "render_test";
 
+    /// Factory method
     pub fn new(
         context: &Rc<RefCell<Context>>,
         queue_family_collection: &mut QueueFamilyCollection,
         swapchain: &Swapchain,
     ) -> Result<Self, FennecError> {
         // Create render finished semaphore
-        let mut finished_semaphore = Semaphore::new(context)?;
-        finished_semaphore.set_name("RenderTest finished semaphore")?;
-        // Create render pass and framebuffers
-        let attachments = [vk::AttachmentDescription::builder()
-            .format(swapchain.format())
-            .initial_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .build()];
+        let finished_semaphore =
+            Semaphore::new(context)?.with_name("RenderTest::finished_semaphore")?;
+        // Create render pass
+        let attachments = [
+            // Color attachment
+            *vk::AttachmentDescription::builder()
+                .format(swapchain.format())
+                .samples(vk::SampleCountFlags::TYPE_1)
+                .load_op(vk::AttachmentLoadOp::CLEAR)
+                .store_op(vk::AttachmentStoreOp::STORE)
+                .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+                .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+                .initial_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .final_layout(vk::ImageLayout::PRESENT_SRC_KHR),
+        ];
         let subpasses = [Subpass {
             input_attachments: vec![],
-            color_attachments: vec![vk::AttachmentReference::builder()
+            color_attachments: vec![*vk::AttachmentReference::builder()
                 .attachment(0)
-                .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                .build()],
+                .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)],
             depth_stencil_attachment: None,
             preserve_attachments: vec![],
             dependencies: vec![],
         }];
-        let mut render_pass = RenderPass::new(context, &attachments, &subpasses)?;
-        render_pass.set_name("RenderTest render pass")?;
+        let render_pass = RenderPass::new(context, &attachments, &subpasses)?
+            .with_name("RenderTest::render_pass")?;
+        // Create framebuffers
         let framebuffers = swapchain
             .images()
             .iter()
             .enumerate()
             .map(|(index, image)| {
-                let mut view = image.view(&image.range_color_basic(), None)?;
-                view.set_name(&format!("RenderTest framebuffer {} image view", index))?;
-                let mut framebuffer = Framebuffer::new(context, &render_pass, vec![view])?;
-                framebuffer.set_name(&format!("RenderTest framebuffer {}", index))?;
+                let view = image
+                    .view(&image.range_color_basic(), None)?
+                    .with_name(&format!(
+                        "RenderTest::framebuffers[{}].attachments[0]",
+                        index
+                    ))?;
+                let framebuffer = Framebuffer::new(context, &render_pass, vec![view])?
+                    .with_name(&format!("RenderTest::framebuffers[{}]", index))?;
                 Ok(framebuffer)
             })
             .handle_results()?
             .collect::<Vec<Framebuffer>>();
+        // Create vertex shader
+        let vertex_shader = ShaderModule::new(
+            context,
+            &mut File::open(&paths::SHADERS.join(PathBuf::from("test.vert.spv")))?,
+        )?
+        .with_name("RenderTest::vertex_shader")?;
+        let vertex_entry = CString::new(vertex_shader.entry_point())?;
+        // Create fragment shader
+        let fragment_shader = ShaderModule::new(
+            context,
+            &mut File::open(&paths::SHADERS.join(PathBuf::from("test.frag.spv")))?,
+        )?
+        .with_name("RenderTest::fragment_shader")?;
+        let fragment_entry = CString::new(fragment_shader.entry_point())?;
+        // Create stages
+        let stages = [
+            *vk::PipelineShaderStageCreateInfo::builder()
+                .module(*vertex_shader.handle().handle())
+                .stage(vk::ShaderStageFlags::VERTEX)
+                .name(&vertex_entry),
+            *vk::PipelineShaderStageCreateInfo::builder()
+                .module(*fragment_shader.handle().handle())
+                .stage(vk::ShaderStageFlags::FRAGMENT)
+                .name(&fragment_entry),
+        ];
+        // Create viewports
+        let viewports = [Viewport {
+            x: 0.0,
+            y: 0.0,
+            width: 1.0,
+            height: 1.0,
+            min_depth: 0.0,
+            max_depth: 1.0,
+            scissor_offset: vk::Offset2D { x: 0, y: 0 },
+            scissor_extent: swapchain.extent(),
+        }];
+        // Create graphics states
+        let graphics_states = GraphicsStates {
+            culling_state: CullingState {
+                enable: false,
+                ..Default::default()
+            },
+            depth_state: DepthState {
+                enable_test: false,
+                enable_write: false,
+                ..Default::default()
+            },
+            blend_state: BlendState {
+                enable_logic_op: false,
+                color_attachment_blend_functions: vec![
+                    *vk::PipelineColorBlendAttachmentState::builder()
+                        .blend_enable(false)
+                        .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
+                        .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_DST_ALPHA)
+                        .color_blend_op(vk::BlendOp::ADD)
+                        .src_alpha_blend_factor(vk::BlendFactor::ONE)
+                        .dst_alpha_blend_factor(vk::BlendFactor::ONE_MINUS_DST_ALPHA)
+                        .alpha_blend_op(vk::BlendOp::ADD),
+                ],
+                ..Default::default()
+            },
+        };
+        // Create pipeline
+        let pipeline = GraphicsPipeline::new(
+            context,
+            &render_pass,
+            0,
+            &[],
+            &[],
+            vk::PrimitiveTopology::TRIANGLE_LIST,
+            &stages,
+            &viewports,
+            &graphics_states,
+            None,
+        )?
+        .with_name("RenderTest::pipeline")?;
         // Create command buffers
         let graphics_long_term = queue_family_collection
             .graphics_mut()
@@ -80,55 +176,50 @@ impl RenderTest {
                 None,
                 None,
                 None,
-                Some(&[vk::ImageMemoryBarrier::builder()
+                Some(&[*vk::ImageMemoryBarrier::builder()
                     .image(*image.image_handle().handle())
                     .old_layout(vk::ImageLayout::UNDEFINED)
                     .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
                     .src_access_mask(Default::default())
                     .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-                    .subresource_range(image.range_color_basic())
-                    .build()]),
+                    .subresource_range(image.range_color_basic())]),
             )?;
-            let pass = writer.begin_render_pass(
-                &render_pass,
-                &framebuffers[i],
-                vk::Rect2D {
-                    offset: vk::Offset2D { x: 0, y: 0 },
-                    extent: swapchain.extent(),
-                },
-                &[vk::ClearValue {
-                    color: vk::ClearColorValue {
-                        float32: [0.5, 0.7, 0.9, 1.0],
+            {
+                // Begin render pass
+                let active_pass = writer.begin_render_pass(
+                    &render_pass,
+                    &framebuffers[i],
+                    vk::Rect2D {
+                        offset: vk::Offset2D { x: 0, y: 0 },
+                        extent: swapchain.extent(),
                     },
-                }],
-            )?;
-            pass.end();
-            writer.pipeline_barrier(
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-                None,
-                None,
-                None,
-                Some(&[vk::ImageMemoryBarrier::builder()
-                    .image(*image.image_handle().handle())
-                    .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
-                    .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-                    .dst_access_mask(vk::AccessFlags::MEMORY_READ)
-                    .subresource_range(image.range_color_basic())
-                    .build()]),
-            )?;
+                    &[vk::ClearValue {
+                        color: vk::ClearColorValue {
+                            float32: [0.5, 0.7, 0.9, 1.0],
+                        },
+                    }],
+                )?;
+                {
+                    // Begin pipeline
+                    let active_pipeline = active_pass.bind_graphics_pipeline(&pipeline)?;
+                    active_pipeline.draw(0, 3, 0, 1)?;
+                }
+            }
         }
         Ok(Self {
-            finished_semaphore,
             render_pass,
             framebuffers,
+            finished_semaphore,
+            vertex_shader,
+            fragment_shader,
+            pipeline,
         })
     }
 
-    pub fn submit(
+    /// Submit draw command buffers
+    pub fn submit_draw(
         &self,
-        wait_for: (&Semaphore, vk::PipelineStageFlags),
+        wait_for: &Semaphore,
         queue_family_collection: &QueueFamilyCollection,
         image_index: u32,
         signaled_fence: Option<&Fence>,
@@ -140,7 +231,7 @@ impl RenderTest {
                 graphics_long_term.command_buffers(Self::COMMAND_BUFFERS_NAME)?
                     [image_index as usize],
             ]),
-            Some(&[wait_for]),
+            Some(&[(wait_for, vk::PipelineStageFlags::TOP_OF_PIPE)]),
             Some(&[&self.finished_semaphore]),
             signaled_fence,
         )?;

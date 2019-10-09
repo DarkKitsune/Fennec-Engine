@@ -4,14 +4,13 @@ use crate::error::FennecError;
 use ash::version::{DeviceV1_0, InstanceV1_0};
 use ash::vk;
 use std::cell::RefCell;
+use std::ffi::c_void;
 use std::rc::Rc;
-pub use vk::{
-    Extent2D, Format, ImageCreateFlags, ImageLayout, ImageTiling, ImageUsageFlags, SampleCountFlags,
-};
 
 /// A portion of memory allocated on the graphics device
 pub struct Memory {
     memory: VKHandle<vk::DeviceMemory>,
+    memory_flags: vk::MemoryPropertyFlags,
 }
 
 impl Memory {
@@ -19,6 +18,7 @@ impl Memory {
     pub fn new(
         context: &Rc<RefCell<Context>>,
         memory_reqs: vk::MemoryRequirements,
+        memory_flags: vk::MemoryPropertyFlags,
     ) -> Result<Self, FennecError> {
         let context_borrowed = context.try_borrow()?;
         let logical_device = context_borrowed.logical_device();
@@ -28,16 +28,47 @@ impl Memory {
                 context_borrowed.instance(),
                 *context_borrowed.physical_device(),
                 memory_reqs.memory_type_bits,
-                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                memory_flags,
             )?)
-            .allocation_size(memory_reqs.size)
-            .build();
+            .allocation_size(memory_reqs.size);
         // Allocate memory
         let memory = unsafe { logical_device.allocate_memory(&allocate_info, None) }?;
         // Return memory
         Ok(Self {
             memory: VKHandle::new(context, memory, false),
+            memory_flags,
         })
+    }
+
+    /// Maps a portion of the memory to host memory for writing
+    pub fn map(&mut self, offset: u64, size: u64) -> Result<MemoryMap, FennecError> {
+        if !self.mappable() {
+            return Err(FennecError::new(format!(
+                "Cannot map {} as it is either protected or host-invisible",
+                self.name()
+            )));
+        }
+        let ptr = unsafe {
+            self.context().try_borrow()?.logical_device().map_memory(
+                *self.handle().handle(),
+                offset,
+                size,
+                Default::default(),
+            )?
+        };
+        Ok(MemoryMap {
+            context: self.context().clone(),
+            memory: self,
+            ptr,
+        })
+    }
+
+    /// Gets whether the memory is mappable to host memory
+    pub fn mappable(&self) -> bool {
+        self.memory_flags & vk::MemoryPropertyFlags::HOST_VISIBLE
+            == vk::MemoryPropertyFlags::HOST_VISIBLE
+            && self.memory_flags & vk::MemoryPropertyFlags::PROTECTED
+                != vk::MemoryPropertyFlags::PROTECTED
     }
 }
 
@@ -52,6 +83,10 @@ impl VKObject<vk::DeviceMemory> for Memory {
 
     fn object_type() -> vk::DebugReportObjectTypeEXT {
         vk::DebugReportObjectTypeEXT::DEVICE_MEMORY
+    }
+
+    fn set_children_names(&mut self) -> Result<(), FennecError> {
+        Ok(())
     }
 }
 
@@ -81,4 +116,36 @@ fn get_memory_type_index(
                 type_bits, properties
             ))
         })
+}
+
+/// Represents a region of device memory mapped to host memory
+pub struct MemoryMap<'a> {
+    context: Rc<RefCell<Context>>,
+    memory: &'a mut Memory,
+    ptr: *mut c_void,
+}
+
+impl MemoryMap<'_> {
+    /// Unmaps the memory region and consume this MemoryMap object
+    pub fn unmap(self) {}
+
+    // TODO: v get rid of this unsafe garbage and replace it with safer writing methods?
+    /// Gets the pointer to the beginning of the memory region.\
+    /// This function is ``unsafe`` as the pointer will not prevent writing outside of the region,
+    /// which leads to undefined behavior.
+    pub unsafe fn ptr(&self) -> *mut c_void {
+        self.ptr
+    }
+}
+
+impl Drop for MemoryMap<'_> {
+    fn drop(&mut self) {
+        unsafe {
+            self.context
+                .try_borrow()
+                .unwrap()
+                .logical_device()
+                .unmap_memory(*self.memory.handle().handle())
+        }
+    }
 }

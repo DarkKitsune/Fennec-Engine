@@ -107,15 +107,16 @@ impl Image2D {
             } else {
                 vk::SharingMode::EXCLUSIVE
             })
-            .initial_layout(initial_layout.unwrap_or(vk::ImageLayout::GENERAL))
-            .build();
+            .initial_layout(initial_layout.unwrap_or(vk::ImageLayout::GENERAL));
         // Create image and memory
         let context_borrowed = context.try_borrow()?;
         let logical_device = context_borrowed.logical_device();
         let image = unsafe { logical_device.create_image(&create_info, None) }?;
-        let memory = Memory::new(context, unsafe {
-            logical_device.get_image_memory_requirements(image)
-        })?;
+        let memory = Memory::new(
+            context,
+            unsafe { logical_device.get_image_memory_requirements(image) },
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        )?;
         // Bind memory to image
         unsafe { logical_device.bind_image_memory(image, *memory.handle().handle(), 0) }?;
         // Return image
@@ -139,6 +140,11 @@ impl VKObject<vk::Image> for Image2D {
 
     fn object_type() -> vk::DebugReportObjectTypeEXT {
         vk::DebugReportObjectTypeEXT::IMAGE
+    }
+
+    fn set_children_names(&mut self) -> Result<(), FennecError> {
+        self.memory.set_name(&format!("{}.memory", self.name()))?;
+        Ok(())
     }
 }
 
@@ -172,8 +178,8 @@ impl Image for Image2D {
         range: &vk::ImageSubresourceRange,
         components: Option<vk::ComponentMapping>,
     ) -> Result<ImageView, FennecError> {
-        let mut view = ImageView::new(self.image_handle().context(), self, range, components)?;
-        view.set_name(&format!("view into {}", self.name()))?;
+        let view = ImageView::new(self.image_handle().context(), self, range, components)?
+            .with_name(&format!("view into {}", self.name()))?;
         Ok(view)
     }
 }
@@ -223,34 +229,31 @@ pub trait Image {
         base_mip: u32,
         mip_count: u32,
     ) -> vk::ImageSubresourceRange {
-        vk::ImageSubresourceRange::builder()
+        *vk::ImageSubresourceRange::builder()
             .aspect_mask(aspects)
             .base_array_layer(base_layer)
             .layer_count(layer_count)
             .base_mip_level(base_mip)
             .level_count(mip_count)
-            .build()
     }
 
     /// Create a subresource range pointing to the color aspect of layer 0, mipmap level 0
     fn range_color_basic(&self) -> vk::ImageSubresourceRange {
-        vk::ImageSubresourceRange::builder()
+        *vk::ImageSubresourceRange::builder()
             .aspect_mask(vk::ImageAspectFlags::COLOR)
             .base_array_layer(0)
             .layer_count(1)
             .base_mip_level(0)
             .level_count(1)
-            .build()
     }
 
     /// Create a subresource range pointing to the depth & stencil aspects of layer 0, mipmap level 0
     fn range_depth_stencil_basic(&self) -> vk::ImageSubresourceRange {
-        vk::ImageSubresourceRange::builder()
+        *vk::ImageSubresourceRange::builder()
             .aspect_mask(vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL)
             .base_array_layer(0)
             .layer_count(1)
             .base_mip_level(0)
             .level_count(1)
-            .build()
     }
 }

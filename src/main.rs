@@ -4,7 +4,11 @@ extern crate version;
 extern crate lazy_static;
 #[macro_use]
 extern crate ash;
+extern crate colored;
+extern crate glsl_layout;
 extern crate glutin;
+extern crate spirv_reflect;
+extern crate winapi;
 
 #[macro_use]
 pub mod error;

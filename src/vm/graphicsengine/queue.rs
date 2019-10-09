@@ -1,5 +1,6 @@
 use super::framebuffer::Framebuffer;
 use super::image::Image;
+use super::pipeline::GraphicsPipeline;
 use super::renderpass::RenderPass;
 use super::sync::{Fence, Semaphore};
 use super::vkobject::{VKHandle, VKObject};
@@ -32,11 +33,16 @@ impl QueueFamilyCollection {
     ) -> Result<Self, FennecError> {
         let surface_loader = Surface::new(entry, instance);
         // Find present family queue
-        let present = choose_family(&families, QueueKind::Present, |index, _info| unsafe {
-            surface_loader.get_physical_device_surface_support(device, index as u32, surface)
-        })?;
+        let present = choose_family(
+            "present",
+            &families,
+            QueueKind::Present,
+            |index, _info| unsafe {
+                surface_loader.get_physical_device_surface_support(device, index as u32, surface)
+            },
+        )?;
         // Find graphics family queue
-        let graphics = choose_family(&families, QueueKind::Graphics, |index, info| {
+        let graphics = choose_family("graphics", &families, QueueKind::Graphics, |index, info| {
             info.queue_flags.contains(vk::QueueFlags::GRAPHICS)
                 && unsafe {
                     surface_loader.get_physical_device_surface_support(
@@ -47,9 +53,12 @@ impl QueueFamilyCollection {
                 }
         })?;
         // Find transfer family queue
-        let transfer = choose_family(&families, QueueKind::Transfer, |_index, info| {
-            info.queue_flags.contains(vk::QueueFlags::TRANSFER)
-        })?;
+        let transfer = choose_family(
+            "transfer",
+            &families,
+            QueueKind::Transfer,
+            |_index, info| info.queue_flags.contains(vk::QueueFlags::TRANSFER),
+        )?;
         // Return the queue family collection
         Ok(Self {
             present,
@@ -110,6 +119,7 @@ impl QueueFamilyCollection {
 
 /// Chooses a family that fits specified requirements
 fn choose_family<F>(
+    name: &str,
     families: &[vk::QueueFamilyProperties],
     kind: QueueKind,
     func: F,
@@ -120,7 +130,12 @@ where
     for (index, ref info) in families.iter().enumerate() {
         let good_queue_family = func(index as u32, *info);
         if good_queue_family {
-            return Ok(QueueFamily::new(kind, index as u32, info.queue_count));
+            return Ok(QueueFamily::new(
+                &format!("GraphicsEngine::queue_family_collection.{}", name),
+                kind,
+                index as u32,
+                info.queue_count,
+            ));
         }
     }
     Err(FennecError::new(format!(
@@ -154,6 +169,7 @@ fn reduce_family_priorities_to_unique(priorities: &mut Vec<(u32, Vec<f32>)>) {
 
 /// A Vulkan queue family
 pub struct QueueFamily {
+    name: String,
     kind: QueueKind,
     index: u32,
     queue_count: u32,
@@ -163,8 +179,9 @@ pub struct QueueFamily {
 
 impl QueueFamily {
     /// QueueFamily factory method
-    fn new(kind: QueueKind, index: u32, queue_count: u32) -> Self {
+    fn new(name: &str, kind: QueueKind, index: u32, queue_count: u32) -> Self {
         Self {
+            name: String::from(name),
             kind,
             index,
             queue_count,
@@ -248,20 +265,24 @@ impl QueueFamily {
         self.queues = Some(
             (0..self.queue_count)
                 .map(|idx| unsafe {
-                    let mut queue = Queue::new(
+                    let queue = Queue::new(
                         context,
                         self,
                         context_borrowed
                             .logical_device()
                             .get_device_queue(self.index, idx),
-                    )?;
-                    queue.set_name(&format!("{:?} queue {}", self.kind(), idx))?;
+                    )?
+                    .with_name(&format!("{}.queues[{}]", self.name, idx))?;
                     Ok(queue)
                 })
                 .handle_results()?
                 .collect(),
         );
-        self.command_pools = Some(CommandPoolCollection::new(context, &self)?);
+        self.command_pools = Some(CommandPoolCollection::new(
+            &format!("{}.command_pools", self.name),
+            context,
+            &self,
+        )?);
         Ok(())
     }
 }
@@ -315,46 +336,41 @@ impl Queue {
         fence: Option<&Fence>,
     ) -> Result<(), FennecError> {
         unsafe {
+            let submit_wait_semaphores = match wait_semaphores {
+                Some(waits) => waits
+                    .iter()
+                    .map(|wait| *wait.0.handle().handle())
+                    .collect::<Vec<vk::Semaphore>>(),
+                None => Default::default(),
+            };
+            let submit_wait_stages = match wait_semaphores {
+                Some(waits) => waits
+                    .iter()
+                    .map(|wait| wait.1)
+                    .collect::<Vec<vk::PipelineStageFlags>>(),
+                None => Default::default(),
+            };
+            let submit_signal_semaphores = match signal_semaphores {
+                Some(signals) => signals
+                    .iter()
+                    .map(|signal_semaphore| *signal_semaphore.handle().handle())
+                    .collect::<Vec<vk::Semaphore>>(),
+                None => Default::default(),
+            };
+            let submit_command_buffers = match command_buffers {
+                Some(command_buffers) => command_buffers
+                    .iter()
+                    .map(|command_buffer| *command_buffer.handle().handle())
+                    .collect::<Vec<vk::CommandBuffer>>(),
+                None => Default::default(),
+            };
             self.context().try_borrow()?.logical_device().queue_submit(
                 *self.handle().handle(),
-                &[vk::SubmitInfo::builder()
-                    .wait_dst_stage_mask(
-                        &wait_semaphores
-                            .map(|e| {
-                                e.iter()
-                                    .map(|e| e.1)
-                                    .collect::<Vec<vk::PipelineStageFlags>>()
-                            })
-                            .unwrap_or_else(Vec::new),
-                    )
-                    .wait_semaphores(
-                        &wait_semaphores
-                            .map(|e| {
-                                e.iter()
-                                    .map(|e| *(e.0).handle().handle())
-                                    .collect::<Vec<vk::Semaphore>>()
-                            })
-                            .unwrap_or_else(Vec::new),
-                    )
-                    .signal_semaphores(
-                        &signal_semaphores
-                            .map(|e| {
-                                e.iter()
-                                    .map(|e| *e.handle().handle())
-                                    .collect::<Vec<vk::Semaphore>>()
-                            })
-                            .unwrap_or_else(Vec::new),
-                    )
-                    .command_buffers(
-                        &command_buffers
-                            .map(|e| {
-                                e.iter()
-                                    .map(|e| *e.handle().handle())
-                                    .collect::<Vec<vk::CommandBuffer>>()
-                            })
-                            .unwrap_or_else(Vec::new),
-                    )
-                    .build()],
+                &[*vk::SubmitInfo::builder()
+                    .wait_semaphores(&submit_wait_semaphores)
+                    .wait_dst_stage_mask(&submit_wait_stages)
+                    .signal_semaphores(&submit_signal_semaphores)
+                    .command_buffers(&submit_command_buffers)],
                 fence.map(|e| *e.handle().handle()).unwrap_or_default(),
             )
         }?;
@@ -374,6 +390,10 @@ impl VKObject<vk::Queue> for Queue {
     fn object_type() -> vk::DebugReportObjectTypeEXT {
         vk::DebugReportObjectTypeEXT::QUEUE
     }
+
+    fn set_children_names(&mut self) -> Result<(), FennecError> {
+        Ok(())
+    }
 }
 
 /// The collection of command pools owned by a queue family
@@ -384,11 +404,15 @@ pub struct CommandPoolCollection {
 
 impl CommandPoolCollection {
     /// CommandPoolCollection factory method
-    fn new(context: &Rc<RefCell<Context>>, family: &QueueFamily) -> Result<Self, FennecError> {
-        let mut transient = CommandPool::new(context, family, true)?;
-        transient.set_name(&format!("{:?} command pool (transient)", family.kind()))?;
-        let mut long_term = CommandPool::new(context, family, false)?;
-        long_term.set_name(&format!("{:?} command pool (long-term)", family.kind()))?;
+    fn new(
+        name: &str,
+        context: &Rc<RefCell<Context>>,
+        family: &QueueFamily,
+    ) -> Result<Self, FennecError> {
+        let transient =
+            CommandPool::new(context, family, true)?.with_name(&format!("{}.transient", name))?;
+        let long_term =
+            CommandPool::new(context, family, false)?.with_name(&format!("{}.long_term", name))?;
         Ok(Self {
             transient,
             long_term,
@@ -466,11 +490,7 @@ impl CommandPool {
         }
         let command_buffers = {
             let context = self.context_mut().clone();
-            let mut buffers = CommandBuffer::new(&context, self, count)?;
-            for (i, buffer) in buffers.iter_mut().enumerate() {
-                buffer.set_name(&format!("{} {} {}", self.name(), key, i))?;
-            }
-            buffers
+            CommandBuffer::new(&context, self, count)?
         };
         self.command_buffers.insert(key.clone(), command_buffers);
         Ok(self.command_buffers_mut(key)?)
@@ -518,6 +538,16 @@ impl VKObject<vk::CommandPool> for CommandPool {
     fn object_type() -> vk::DebugReportObjectTypeEXT {
         vk::DebugReportObjectTypeEXT::COMMAND_POOL
     }
+
+    fn set_children_names(&mut self) -> Result<(), FennecError> {
+        let own_name = String::from(self.name());
+        for (list_name, list) in self.command_buffers.iter_mut() {
+            for (index, command_buffer) in list.iter_mut().enumerate() {
+                command_buffer.set_name(&format!("{}.{}.{}", own_name, list_name, index))?;
+            }
+        }
+        Ok(())
+    }
 }
 
 /// A vulkan command buffer
@@ -537,8 +567,7 @@ impl CommandBuffer {
             let create_info = vk::CommandBufferAllocateInfo::builder()
                 .command_buffer_count(count)
                 .level(vk::CommandBufferLevel::PRIMARY)
-                .command_pool(*command_pool.handle().handle())
-                .build();
+                .command_pool(*command_pool.handle().handle());
             context
                 .try_borrow()?
                 .logical_device()
@@ -565,19 +594,17 @@ impl CommandBuffer {
             ));
         }
         let context = self.context().clone();
-        let begin_info = vk::CommandBufferBeginInfo::builder()
-            .flags(
-                if used_once {
-                    vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT
-                } else {
-                    Default::default()
-                } | if simultaneous_use {
-                    vk::CommandBufferUsageFlags::SIMULTANEOUS_USE
-                } else {
-                    Default::default()
-                },
-            )
-            .build();
+        let begin_info = vk::CommandBufferBeginInfo::builder().flags(
+            if used_once {
+                vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT
+            } else {
+                Default::default()
+            } | if simultaneous_use {
+                vk::CommandBufferUsageFlags::SIMULTANEOUS_USE
+            } else {
+                Default::default()
+            },
+        );
         unsafe {
             context
                 .try_borrow()?
@@ -587,7 +614,6 @@ impl CommandBuffer {
         self.writing = true;
         Ok(CommandBufferWriter {
             command_buffer: self,
-            context,
         })
     }
 }
@@ -604,12 +630,15 @@ impl VKObject<vk::CommandBuffer> for CommandBuffer {
     fn object_type() -> vk::DebugReportObjectTypeEXT {
         vk::DebugReportObjectTypeEXT::COMMAND_BUFFER
     }
+
+    fn set_children_names(&mut self) -> Result<(), FennecError> {
+        Ok(())
+    }
 }
 
 /// Writer to write to a command buffer
 pub struct CommandBufferWriter<'a> {
     command_buffer: &'a mut CommandBuffer,
-    context: Rc<RefCell<Context>>,
 }
 
 impl<'a> CommandBufferWriter<'a> {
@@ -627,7 +656,8 @@ impl<'a> CommandBufferWriter<'a> {
         image_memory_barriers: Option<&[vk::ImageMemoryBarrier]>,
     ) -> Result<(), FennecError> {
         unsafe {
-            self.context
+            self.command_buffer
+                .context()
                 .try_borrow()?
                 .logical_device()
                 .cmd_pipeline_barrier(
@@ -656,7 +686,8 @@ impl<'a> CommandBufferWriter<'a> {
         ranges: &[vk::ImageSubresourceRange],
     ) -> Result<(), FennecError> {
         unsafe {
-            self.context
+            self.command_buffer
+                .context()
                 .try_borrow()?
                 .logical_device()
                 .cmd_clear_color_image(
@@ -682,10 +713,10 @@ impl<'a> CommandBufferWriter<'a> {
             .render_pass(*render_pass.handle().handle())
             .framebuffer(*framebuffer.handle().handle())
             .render_area(render_area)
-            .clear_values(clear_values)
-            .build();
+            .clear_values(clear_values);
         unsafe {
-            self.context
+            self.command_buffer
+                .context()
                 .try_borrow()?
                 .logical_device()
                 .cmd_begin_render_pass(
@@ -693,7 +724,9 @@ impl<'a> CommandBufferWriter<'a> {
                     &begin_info,
                     Default::default(),
                 );
-            Ok(ActiveRenderPass::new(self))
+            Ok(ActiveRenderPass {
+                command_buffer_writer: self,
+            })
         }
     }
 }
@@ -703,7 +736,8 @@ impl<'a> Drop for CommandBufferWriter<'a> {
         // Stop writing to the associated command buffer when this is dropped
         self.command_buffer.writing = false;
         unsafe {
-            self.context
+            self.command_buffer
+                .context()
                 .borrow()
                 .logical_device()
                 .end_command_buffer(*self.command_buffer.handle().handle())
@@ -719,15 +753,32 @@ pub struct ActiveRenderPass<'a> {
 }
 
 impl<'a> ActiveRenderPass<'a> {
-    /// ActiveRenderPass factory method
-    pub fn new(command_buffer_writer: &'a CommandBufferWriter<'a>) -> Self {
-        Self {
-            command_buffer_writer,
-        }
-    }
-
     /// Consume the ActiveRenderPass, ending the render pass
     pub fn end(self) {}
+
+    /// Bind a graphics pipeline
+    pub fn bind_graphics_pipeline(
+        &self,
+        pipeline: &GraphicsPipeline,
+    ) -> Result<ActiveGraphicsPipeline, FennecError> {
+        let command_buffer_handle = *self.command_buffer_writer.command_buffer.handle().handle();
+        unsafe {
+            self.command_buffer_writer
+                .command_buffer
+                .context()
+                .try_borrow()?
+                .logical_device()
+                .cmd_bind_pipeline(
+                    command_buffer_handle,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    *pipeline.handle().handle(),
+                );
+            // TODO: Start pipeline usage benchmark
+            Ok(ActiveGraphicsPipeline {
+                active_render_pass: self,
+            })
+        }
+    }
 }
 
 impl<'a> Drop for ActiveRenderPass<'a> {
@@ -735,10 +786,65 @@ impl<'a> Drop for ActiveRenderPass<'a> {
         // End the render pass when this is dropped
         unsafe {
             self.command_buffer_writer
-                .context
+                .command_buffer
+                .context()
                 .borrow()
                 .logical_device()
                 .cmd_end_render_pass(*self.command_buffer_writer.command_buffer.handle().handle());
         }
+    }
+}
+
+/// Wrapper around an ActiveRenderPass that has a graphics pipeline bound\
+/// Enables writing commands that require an active graphics pipeline
+pub struct ActiveGraphicsPipeline<'a> {
+    active_render_pass: &'a ActiveRenderPass<'a>,
+}
+
+impl<'a> ActiveGraphicsPipeline<'a> {
+    /// Consume the ActiveRenderPass, ending the render pass
+    pub fn end(self) {}
+
+    /// Dispatch a draw
+    pub fn draw(
+        &self,
+        first_vertex: u32,
+        vertex_count: u32,
+        first_instance: u32,
+        instance_count: u32,
+    ) -> Result<(), FennecError> {
+        if vertex_count == 0 {
+            return Err(FennecError::new("Vertex count was 0"));
+        }
+        if instance_count == 0 {
+            return Err(FennecError::new("Instance count was 0"));
+        }
+        unsafe {
+            self.active_render_pass
+                .command_buffer_writer
+                .command_buffer
+                .context()
+                .try_borrow()?
+                .logical_device()
+                .cmd_draw(
+                    *self
+                        .active_render_pass
+                        .command_buffer_writer
+                        .command_buffer
+                        .handle()
+                        .handle(),
+                    vertex_count,
+                    instance_count,
+                    first_vertex,
+                    first_instance,
+                );
+            Ok(())
+        }
+    }
+}
+
+impl<'a> Drop for ActiveGraphicsPipeline<'a> {
+    fn drop(&mut self) {
+        // TODO: End pipeline usage benchmark
     }
 }

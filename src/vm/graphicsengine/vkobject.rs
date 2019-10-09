@@ -110,6 +110,18 @@ impl HandleType for vk::Pipeline {
     }
 }
 
+impl HandleType for vk::PipelineLayout {
+    fn destroy(&mut self, context: &Rc<RefCell<Context>>) -> Result<(), FennecError> {
+        unsafe {
+            context
+                .try_borrow()?
+                .logical_device()
+                .destroy_pipeline_layout(*self, None)
+        };
+        Ok(())
+    }
+}
+
 impl HandleType for vk::RenderPass {
     fn destroy(&mut self, context: &Rc<RefCell<Context>>) -> Result<(), FennecError> {
         unsafe {
@@ -141,6 +153,42 @@ impl HandleType for vk::ImageView {
                 .try_borrow()?
                 .logical_device()
                 .destroy_image_view(*self, None)
+        };
+        Ok(())
+    }
+}
+
+impl HandleType for vk::DescriptorPool {
+    fn destroy(&mut self, context: &Rc<RefCell<Context>>) -> Result<(), FennecError> {
+        unsafe {
+            context
+                .try_borrow()?
+                .logical_device()
+                .destroy_descriptor_pool(*self, None)
+        };
+        Ok(())
+    }
+}
+
+impl HandleType for vk::Buffer {
+    fn destroy(&mut self, context: &Rc<RefCell<Context>>) -> Result<(), FennecError> {
+        unsafe {
+            context
+                .try_borrow()?
+                .logical_device()
+                .destroy_buffer(*self, None)
+        };
+        Ok(())
+    }
+}
+
+impl HandleType for vk::ShaderModule {
+    fn destroy(&mut self, context: &Rc<RefCell<Context>>) -> Result<(), FennecError> {
+        unsafe {
+            context
+                .try_borrow()?
+                .logical_device()
+                .destroy_shader_module(*self, None)
         };
         Ok(())
     }
@@ -231,27 +279,35 @@ where
     fn handle_mut(&mut self) -> &mut VKHandle<THandleType>;
     /// Get the type of the Vulkan object
     fn object_type() -> vk::DebugReportObjectTypeEXT;
+    /// Update the name of children (should not normally be used)
+    fn set_children_names(&mut self) -> Result<(), FennecError>;
     /// Set the name of the Vulkan object for debug info
     fn set_name(&mut self, name: &str) -> Result<(), FennecError> {
         // Set the name on the program side by setting the VKHandle's name
         self.handle_mut().set_name(name);
         // Set the name on the Vulkan side
-        let context = self.context().try_borrow()?;
-        let cstr = CString::new(name).map_err(|err| {
-            FennecError::from_error("Could not convert object name to a CString", Box::new(err))
-        })?;
-        let object_name = vk::DebugMarkerObjectNameInfoEXT::builder()
-            .object(self.handle().handle().as_raw())
-            .object_type(Self::object_type())
-            .object_name(&cstr)
-            .build();
-        unsafe {
-            context
-                .functions()
-                .device_extensions()
-                .debug_marker()
-                .debug_marker_set_object_name(context.logical_device().handle(), &object_name)?;
+        {
+            let context = self.context().try_borrow()?;
+            let cstr = CString::new(name).map_err(|err| {
+                FennecError::from_error("Could not convert object name to a CString", Box::new(err))
+            })?;
+            let object_name = vk::DebugMarkerObjectNameInfoEXT::builder()
+                .object(self.handle().handle().as_raw())
+                .object_type(Self::object_type())
+                .object_name(&cstr);
+            unsafe {
+                context
+                    .functions()
+                    .device_extensions()
+                    .debug_marker()
+                    .debug_marker_set_object_name(
+                        context.logical_device().handle(),
+                        &object_name,
+                    )?;
+            }
         }
+        // Set name of children
+        self.set_children_names()?;
         Ok(())
     }
 
@@ -268,5 +324,13 @@ where
     /// Get the associated graphics context
     fn context_mut(&mut self) -> &mut Rc<RefCell<Context>> {
         self.handle_mut().context_mut()
+    }
+
+    fn with_name(mut self, name: &str) -> Result<Self, FennecError>
+    where
+        Self: Sized,
+    {
+        self.set_name(name)?;
+        Ok(self)
     }
 }

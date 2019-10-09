@@ -14,13 +14,11 @@ pub struct Fence {
 impl Fence {
     /// Fence factory method
     pub fn new(context: &Rc<RefCell<Context>>, signaled: bool) -> Result<Self, FennecError> {
-        let create_info = vk::FenceCreateInfo::builder()
-            .flags(if signaled {
-                vk::FenceCreateFlags::SIGNALED
-            } else {
-                Default::default()
-            })
-            .build();
+        let create_info = vk::FenceCreateInfo::builder().flags(if signaled {
+            vk::FenceCreateFlags::SIGNALED
+        } else {
+            Default::default()
+        });
         let fence = unsafe {
             context
                 .try_borrow()?
@@ -95,6 +93,10 @@ impl VKObject<vk::Fence> for Fence {
     fn object_type() -> vk::DebugReportObjectTypeEXT {
         vk::DebugReportObjectTypeEXT::FENCE
     }
+
+    fn set_children_names(&mut self) -> Result<(), FennecError> {
+        Ok(())
+    }
 }
 
 /// A status of a fence
@@ -112,7 +114,7 @@ pub struct Semaphore {
 impl Semaphore {
     /// Semaphore factory method
     pub fn new(context: &Rc<RefCell<Context>>) -> Result<Self, FennecError> {
-        let create_info = vk::SemaphoreCreateInfo::builder().build();
+        let create_info = vk::SemaphoreCreateInfo::builder();
         let semaphore = unsafe {
             context
                 .try_borrow()?
@@ -136,5 +138,9 @@ impl VKObject<vk::Semaphore> for Semaphore {
 
     fn object_type() -> vk::DebugReportObjectTypeEXT {
         vk::DebugReportObjectTypeEXT::SEMAPHORE
+    }
+
+    fn set_children_names(&mut self) -> Result<(), FennecError> {
+        Ok(())
     }
 }

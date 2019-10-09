@@ -1,3 +1,5 @@
+pub mod buffer;
+pub mod descriptorset;
 pub mod framebuffer;
 pub mod image;
 pub mod imageview;
@@ -6,6 +8,7 @@ pub mod pipeline;
 pub mod queue;
 pub mod renderpass;
 pub mod rendertest;
+pub mod shadermodule;
 pub mod swapchain;
 pub mod sync;
 pub mod vkobject;
@@ -55,11 +58,10 @@ impl GraphicsEngine {
         // Set up queue family collection
         queue_family_collection.setup(&context)?;
         // Create and name swapchain
-        let mut swapchain = Swapchain::new(&context)?;
-        swapchain.set_name("Display swapchain")?;
+        let swapchain = Swapchain::new(&context)?.with_name("GraphicsEngine::swapchain")?;
         // Create and name image_available_semaphore
-        let mut image_available_semaphore = Semaphore::new(&context)?;
-        image_available_semaphore.set_name("Image available semaphore")?;
+        let image_available_semaphore =
+            Semaphore::new(&context)?.with_name("GraphicsEngine::image_available_semaphore")?;
         // Create render test stage
         let render_test = RenderTest::new(&context, &mut queue_family_collection, &swapchain)?;
         // Return the graphics engine
@@ -79,11 +81,8 @@ impl GraphicsEngine {
             self.swapchain
                 .acquire_next_image(None, Some(&self.image_available_semaphore), None)?;
         // Submit render test stage
-        let render_test_finished = self.render_test.submit(
-            (
-                &self.image_available_semaphore,
-                vk::PipelineStageFlags::TOP_OF_PIPE,
-            ),
+        let render_test_finished = self.render_test.submit_draw(
+            &self.image_available_semaphore,
             &self.queue_family_collection,
             image_index,
             None,
@@ -110,6 +109,7 @@ impl GraphicsEngine {
     }
 }
 
+/// A collection of objects that make up a Vulkan graphics context
 pub struct Context {
     window: Rc<RefCell<FWindow>>,
     functions: Functions,
@@ -167,8 +167,8 @@ impl Context {
     }
 
     /// Gets the window surface
-    pub fn surface(&self) -> &vk::SurfaceKHR {
-        &self.surface
+    pub fn surface(&self) -> vk::SurfaceKHR {
+        self.surface
     }
 
     /// Gets the physical device
@@ -371,9 +371,9 @@ fn compile_shaders() -> Result<(), FennecError> {
             } else {
                 std::env::set_current_dir(old_current_dir)?;
                 return Err(FennecError::new(format!(
-                    "Shader compiler process exited with code {} Stderr: {}",
+                    "Shader compiler process exited with code {} stdout: {}",
                     code,
-                    String::from_utf8(output.stderr)?
+                    String::from_utf8(output.stdout)?
                 )));
             }
         } else {
@@ -406,8 +406,7 @@ fn create_instance(entry: &Entry) -> Result<Instance, FennecError> {
                 | crate::manifest::ENGINE_VERSION.2,
         )
         .application_name(&engine_name)
-        .application_version(0)
-        .build();
+        .application_version(0);
 
     let extensions = validate_instance_extension_availability(
         entry,
@@ -430,8 +429,7 @@ fn create_instance(entry: &Entry) -> Result<Instance, FennecError> {
     let instance_create_info = vk::InstanceCreateInfo::builder()
         .application_info(&application_info)
         .enabled_extension_names(&extensions_raw)
-        .enabled_layer_names(&layers_raw)
-        .build();
+        .enabled_layer_names(&layers_raw);
     unsafe { Ok(entry.create_instance(&instance_create_info, None)?) }
 }
 
@@ -517,8 +515,7 @@ fn create_debug_report_callback(
                 | vk::DebugReportFlagsEXT::INFORMATION
                 | vk::DebugReportFlagsEXT::PERFORMANCE_WARNING
                 | vk::DebugReportFlagsEXT::WARNING,
-        )
-        .build();
+        );
     Ok(unsafe {
         instance_extensions
             .debug_report
@@ -536,8 +533,7 @@ fn create_surface(
     let hinstance = unsafe { GetModuleHandleW(std::ptr::null()) };
     let win32_surface_create_info = vk::Win32SurfaceCreateInfoKHR::builder()
         .hwnd(hwnd)
-        .hinstance(hinstance as *const c_void)
-        .build();
+        .hinstance(hinstance as *const c_void);
     unsafe {
         Ok(instance_extensions
             .os_surface
@@ -586,20 +582,18 @@ fn create_logical_device(
 
     let queue_create_infos = queue_priorities
         .iter()
-        .map(|e| {
-            vk::DeviceQueueCreateInfo::builder()
-                .queue_family_index(e.0)
-                .queue_priorities(&e.1)
-                .build()
+        .enumerate()
+        .map(|(index, _queue_priority)| {
+            *vk::DeviceQueueCreateInfo::builder()
+                .queue_family_index(queue_priorities[index].0)
+                .queue_priorities(&queue_priorities[index].1)
         })
         .collect::<Vec<vk::DeviceQueueCreateInfo>>();
-
-    let features = vk::PhysicalDeviceFeatures::builder().build();
+    let features = vk::PhysicalDeviceFeatures::builder();
     let device_create_info = vk::DeviceCreateInfo::builder()
         .queue_create_infos(&queue_create_infos)
         .enabled_extension_names(&extensions)
-        .enabled_features(&features)
-        .build();
+        .enabled_features(&features);
     let device = unsafe { instance.create_device(physical_device, &device_create_info, None)? };
     Ok(device)
 }

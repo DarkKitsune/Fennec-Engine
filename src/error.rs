@@ -74,6 +74,12 @@ impl Error for FennecError {
     }
 }
 
+impl From<&str> for FennecError {
+    fn from(error: &str) -> FennecError {
+        FennecError::new(error)
+    }
+}
+
 impl From<rlua::Error> for FennecError {
     fn from(error: rlua::Error) -> FennecError {
         FennecError::script(error)

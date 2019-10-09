@@ -27,8 +27,7 @@ impl ImageView {
             .format(image.format())
             .subresource_range(*range)
             .view_type(image.image_view_type())
-            .components(components.unwrap_or_default())
-            .build();
+            .components(components.unwrap_or_default());
         // Create image view
         let image_view = unsafe {
             context
@@ -59,5 +58,9 @@ impl VKObject<vk::ImageView> for ImageView {
 
     fn object_type() -> vk::DebugReportObjectTypeEXT {
         vk::DebugReportObjectTypeEXT::IMAGE_VIEW
+    }
+
+    fn set_children_names(&mut self) -> Result<(), FennecError> {
+        Ok(())
     }
 }

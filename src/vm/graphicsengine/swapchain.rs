@@ -35,7 +35,7 @@ impl Swapchain {
                 .surface()
                 .get_physical_device_surface_formats(
                     *context_borrowed.physical_device(),
-                    *context_borrowed.surface(),
+                    context_borrowed.surface(),
                 )
         }?;
         let format = surface_formats
@@ -63,7 +63,7 @@ impl Swapchain {
                 .surface()
                 .get_physical_device_surface_capabilities(
                     *context_borrowed.physical_device(),
-                    *context_borrowed.surface(),
+                    context_borrowed.surface(),
                 )?
         };
         let image_count =
@@ -87,7 +87,7 @@ impl Swapchain {
                 .surface()
                 .get_physical_device_surface_present_modes(
                     *context_borrowed.physical_device(),
-                    *context_borrowed.surface(),
+                    context_borrowed.surface(),
                 )?
         };
         let present_mode = present_modes
@@ -102,7 +102,7 @@ impl Swapchain {
                 })
             })?;
         let create_info = vk::SwapchainCreateInfoKHR::builder()
-            .surface(*context_borrowed.surface())
+            .surface(context_borrowed.surface())
             .min_image_count(image_count)
             .image_color_space(format.color_space)
             .image_format(format.format)
@@ -113,8 +113,7 @@ impl Swapchain {
             .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
             .present_mode(*present_mode)
             .clipped(true)
-            .image_array_layers(1)
-            .build();
+            .image_array_layers(1);
         let swapchain = unsafe {
             functions
                 .device_extensions()
@@ -131,7 +130,7 @@ impl Swapchain {
                 .map(|(idx, image)| {
                     let mut wrapped =
                         SwapchainImage::new(context, *image, format.format, resolution);
-                    wrapped.set_name(&format!("Swapchain image {}", idx))?;
+                    wrapped.set_name(&format!("Swapchain.{}", idx))?;
                     Ok(wrapped)
                 })
                 .handle_results()?
@@ -180,11 +179,13 @@ impl Swapchain {
         queue: &Queue,
         semaphore: &Semaphore,
     ) -> Result<(), FennecError> {
+        let wait_semaphores = [*semaphore.handle().handle()];
+        let swapchains = [*self.handle().handle()];
+        let image_indices = [image_index];
         let present_info = vk::PresentInfoKHR::builder()
-            .wait_semaphores(&[*semaphore.handle().handle()])
-            .swapchains(&[*self.handle().handle()])
-            .image_indices(&[image_index])
-            .build();
+            .wait_semaphores(&wait_semaphores)
+            .swapchains(&swapchains)
+            .image_indices(&image_indices);
         unsafe {
             self.context()
                 .try_borrow()?
@@ -218,6 +219,14 @@ impl VKObject<vk::SwapchainKHR> for Swapchain {
 
     fn object_type() -> vk::DebugReportObjectTypeEXT {
         vk::DebugReportObjectTypeEXT::SWAPCHAIN_KHR
+    }
+
+    fn set_children_names(&mut self) -> Result<(), FennecError> {
+        let own_name = String::from(self.name());
+        for (index, image) in self.swapchain_images.iter_mut().enumerate() {
+            image.set_name(&format!("{}.{}", own_name, index))?;
+        }
+        Ok(())
     }
 }
 
@@ -256,6 +265,10 @@ impl VKObject<vk::Image> for SwapchainImage {
     fn object_type() -> vk::DebugReportObjectTypeEXT {
         vk::DebugReportObjectTypeEXT::IMAGE
     }
+
+    fn set_children_names(&mut self) -> Result<(), FennecError> {
+        Ok(())
+    }
 }
 
 impl Image for SwapchainImage {
@@ -288,8 +301,8 @@ impl Image for SwapchainImage {
         range: &vk::ImageSubresourceRange,
         components: Option<vk::ComponentMapping>,
     ) -> Result<ImageView, FennecError> {
-        let mut view = ImageView::new(self.image_handle().context(), self, range, components)?;
-        view.set_name(&format!("view into {}", self.name()))?;
+        let view = ImageView::new(self.image_handle().context(), self, range, components)?
+            .with_name(&format!("View into {}", self.name()))?;
         Ok(view)
     }
 }

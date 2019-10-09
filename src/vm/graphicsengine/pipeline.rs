@@ -1,3 +1,4 @@
+use super::renderpass::RenderPass;
 use super::vkobject::{VKHandle, VKObject};
 use super::Context;
 use crate::error::FennecError;
@@ -7,37 +8,39 @@ use std::cell::RefCell;
 use std::rc::Rc;
 //use std::mem::size_of;
 use crate::iteratorext::IteratorResults;
-use itertools::Itertools;
 
 /// A graphics pipeline
 pub struct GraphicsPipeline {
     pipeline: VKHandle<vk::Pipeline>,
+    layout: PipelineLayout,
 }
 
 impl GraphicsPipeline {
     /// GraphicsPipeline factory method
     pub fn new(
         context: &Rc<RefCell<Context>>,
+        render_pass: &RenderPass,
+        subpass: u32,
+        set_layouts: &[vk::DescriptorSetLayout],
         vertex_input_bindings: &[VertexInputBinding],
         topology: vk::PrimitiveTopology,
         stages: &[vk::PipelineShaderStageCreateInfo],
         viewports: &[Viewport],
-        culling_mode: CullingState,
-        depth_mode: &DepthState,
-        blend_mode: &BlendState,
+        states: &GraphicsStates,
         advanced_settings: Option<AdvancedGraphicsPipelineSettings>,
     ) -> Result<Self, FennecError> {
         let advanced_settings = advanced_settings.unwrap_or_default();
+        // Layout
+        let layout = PipelineLayout::new(context, set_layouts)?;
         // Vertex input bindings
         let vertex_binding_descriptions = vertex_input_bindings
             .iter()
             .enumerate()
             .map(|(index, binding_info)| {
-                vk::VertexInputBindingDescription::builder()
+                *vk::VertexInputBindingDescription::builder()
                     .binding(index as u32)
                     .stride(binding_info.stride)
                     .input_rate(binding_info.rate)
-                    .build()
             })
             .collect::<Vec<vk::VertexInputBindingDescription>>();
         // Vertex input attributes
@@ -45,30 +48,24 @@ impl GraphicsPipeline {
             .iter()
             .enumerate()
             .map(|(binding_index, binding_info)| {
-                binding_info
-                    .attributes
-                    .iter()
-                    .map(|attribute| {
-                        vk::VertexInputAttributeDescription::builder()
-                            .binding(binding_index as u32)
-                            .location(attribute.shader_binding_location)
-                            .format(attribute.format.into())
-                            .offset(attribute.offset)
-                            .build()
-                    })
-                    .collect::<Vec<vk::VertexInputAttributeDescription>>()
+                binding_info.attributes.iter().map(move |attribute| {
+                    *vk::VertexInputAttributeDescription::builder()
+                        .binding(binding_index as u32)
+                        .location(attribute.shader_binding_location)
+                        .format(attribute.format.into())
+                        .offset(attribute.offset)
+                })
             })
-            .concat();
+            .flatten()
+            .collect::<Vec<vk::VertexInputAttributeDescription>>();
         // Vertex input state
         let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::builder()
             .vertex_binding_descriptions(&vertex_binding_descriptions)
-            .vertex_attribute_descriptions(&vertex_attribute_descriptions)
-            .build();
+            .vertex_attribute_descriptions(&vertex_attribute_descriptions);
         // Input assembly state
         let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo::builder()
             .topology(topology)
-            .primitive_restart_enable(false)
-            .build();
+            .primitive_restart_enable(false);
         // Viewport state
         let vk_viewports = viewports
             .iter()
@@ -88,14 +85,13 @@ impl GraphicsPipeline {
                     )));
                 }
                 // Build viewport
-                Ok(vk::Viewport::builder()
+                Ok(*vk::Viewport::builder()
                     .x(viewport.x)
                     .y(viewport.y)
                     .width(viewport.width)
                     .height(viewport.height)
                     .min_depth(viewport.min_depth)
-                    .max_depth(viewport.max_depth)
-                    .build())
+                    .max_depth(viewport.max_depth))
             })
             .handle_results()?
             .collect::<Vec<vk::Viewport>>();
@@ -117,17 +113,16 @@ impl GraphicsPipeline {
                     )));
                 }
                 // Build viewport
-                Ok(vk::Rect2D::builder()
-                    .offset(viewport.scissor_offset)
-                    .extent(viewport.scissor_extent)
-                    .build())
+                Ok(vk::Rect2D {
+                    offset: viewport.scissor_offset,
+                    extent: viewport.scissor_extent,
+                })
             })
             .handle_results()?
             .collect::<Vec<vk::Rect2D>>();
         let viewport_state = vk::PipelineViewportStateCreateInfo::builder()
             .viewports(&vk_viewports)
-            .scissors(&scissors)
-            .build();
+            .scissors(&scissors);
         // Rasterization state
         let rasterization_state = vk::PipelineRasterizationStateCreateInfo::builder()
             .depth_clamp_enable(advanced_settings.enable_depth_clamp.unwrap_or(false))
@@ -140,12 +135,12 @@ impl GraphicsPipeline {
                 vk::PrimitiveTopology::POINT_LIST => vk::PolygonMode::POINT,
                 _ => vk::PolygonMode::FILL,
             })
-            .cull_mode(if culling_mode.enable {
+            .cull_mode(if states.culling_state.enable {
                 vk::CullModeFlags::BACK
             } else {
                 vk::CullModeFlags::NONE
             })
-            .front_face(culling_mode.front_face)
+            .front_face(states.culling_state.front_face)
             .depth_bias_enable(advanced_settings.depth_bias.unwrap_or_default().enable)
             .depth_bias_constant_factor(
                 advanced_settings
@@ -160,59 +155,63 @@ impl GraphicsPipeline {
                     .unwrap_or_default()
                     .slope_factor,
             )
-            .line_width(advanced_settings.line_width.unwrap_or(1.0))
-            .build();
+            .line_width(advanced_settings.line_width.unwrap_or(1.0));
+        // Multisample state
+        let multisample_state = vk::PipelineMultisampleStateCreateInfo::builder()
+            .rasterization_samples(vk::SampleCountFlags::TYPE_1);
         // Depth/stencil state
         let depth_stencil_state = vk::PipelineDepthStencilStateCreateInfo::builder()
-            .depth_test_enable(depth_mode.enable_test)
-            .depth_write_enable(depth_mode.enable_write)
-            .depth_compare_op(depth_mode.compare_op)
-            .depth_bounds_test_enable(depth_mode.enable_bounds_test)
-            .stencil_test_enable(depth_mode.enable_stencil_test)
-            .front(depth_mode.stencil_front)
-            .back(depth_mode.stencil_back)
-            .min_depth_bounds(depth_mode.bounds_min)
-            .max_depth_bounds(depth_mode.bounds_max)
-            .build();
+            .depth_test_enable(states.depth_state.enable_test)
+            .depth_write_enable(states.depth_state.enable_write)
+            .depth_compare_op(states.depth_state.compare_op)
+            .depth_bounds_test_enable(states.depth_state.enable_bounds_test)
+            .stencil_test_enable(states.depth_state.enable_stencil_test)
+            .front(states.depth_state.stencil_front)
+            .back(states.depth_state.stencil_back)
+            .min_depth_bounds(states.depth_state.bounds_min)
+            .max_depth_bounds(states.depth_state.bounds_max);
         // Color blend state
         let color_blend_state = vk::PipelineColorBlendStateCreateInfo::builder()
-            .logic_op_enable(blend_mode.enable_logic_op)
-            .logic_op(blend_mode.logic_op)
-            .attachments(&blend_mode.color_attachment_blend_functions)
+            .logic_op_enable(states.blend_state.enable_logic_op)
+            .logic_op(states.blend_state.logic_op)
+            .attachments(&states.blend_state.color_attachment_blend_functions)
             .blend_constants([
-                blend_mode.blend_constant.0,
-                blend_mode.blend_constant.1,
-                blend_mode.blend_constant.2,
-                blend_mode.blend_constant.3,
-            ])
-            .build();
+                states.blend_state.blend_constant.0,
+                states.blend_state.blend_constant.1,
+                states.blend_state.blend_constant.2,
+                states.blend_state.blend_constant.3,
+            ]);
         // Dynamic state
+        let advanced_settings_dynamic_states = advanced_settings.dynamic_states.unwrap_or_default();
         let dynamic_state = vk::PipelineDynamicStateCreateInfo::builder()
-            .dynamic_states(&advanced_settings.dynamic_states.unwrap_or_default())
-            .build();
+            .dynamic_states(&advanced_settings_dynamic_states);
         // Set graphics pipeline create info
         let create_info = vk::GraphicsPipelineCreateInfo::builder()
             .flags(advanced_settings.flags.unwrap_or_default())
+            .render_pass(*render_pass.handle().handle())
+            .subpass(subpass)
+            .layout(*layout.handle().handle())
             .stages(stages)
             .vertex_input_state(&vertex_input_state)
             .input_assembly_state(&input_assembly_state)
             .viewport_state(&viewport_state)
             .rasterization_state(&rasterization_state)
+            .multisample_state(&multisample_state)
             .depth_stencil_state(&depth_stencil_state)
             .color_blend_state(&color_blend_state)
-            .dynamic_state(&dynamic_state)
-            .build();
+            .dynamic_state(&dynamic_state);
         // Create pipeline
-        let possible_pipeline = unsafe {
+        let possible_pipelines = unsafe {
             context
                 .try_borrow()?
                 .logical_device()
-                .create_graphics_pipelines(Default::default(), &[create_info], None)
+                .create_graphics_pipelines(Default::default(), &[*create_info], None)
         };
         // Return pipeline
-        match possible_pipeline {
-            Ok(pipeline) => Ok(Self {
-                pipeline: VKHandle::new(context, pipeline[0], false),
+        match possible_pipelines {
+            Ok(pipelines) => Ok(Self {
+                pipeline: VKHandle::new(context, pipelines[0], false),
+                layout,
             }),
             Err((_pipeline, result)) => Err(FennecError::from(result)),
         }
@@ -231,11 +230,20 @@ impl VKObject<vk::Pipeline> for GraphicsPipeline {
     fn object_type() -> vk::DebugReportObjectTypeEXT {
         vk::DebugReportObjectTypeEXT::PIPELINE
     }
+
+    fn set_children_names(&mut self) -> Result<(), FennecError> {
+        self.layout.set_name(&format!("{}.layout", self.name()))?;
+        Ok(())
+    }
 }
 
 impl Pipeline for GraphicsPipeline {
     fn pipeline_handle(&self) -> &VKHandle<vk::Pipeline> {
         self.handle()
+    }
+
+    fn layout(&self) -> &PipelineLayout {
+        &self.layout
     }
 }
 
@@ -347,6 +355,13 @@ pub struct Viewport {
     pub scissor_extent: vk::Extent2D,
 }
 
+/// Contains graphics pipeline state infos
+pub struct GraphicsStates {
+    pub culling_state: CullingState,
+    pub depth_state: DepthState,
+    pub blend_state: BlendState,
+}
+
 /// Describes a backface culling mode
 #[derive(Default, Copy, Clone)]
 pub struct CullingState {
@@ -421,8 +436,54 @@ pub struct DepthBias {
     pub slope_factor: f32,
 }
 
+/// A Vulkan pipeline layout
+pub struct PipelineLayout {
+    layout: VKHandle<vk::PipelineLayout>,
+}
+
+impl PipelineLayout {
+    pub fn new(
+        context: &Rc<RefCell<Context>>,
+        set_layouts: &[vk::DescriptorSetLayout],
+    ) -> Result<Self, FennecError> {
+        // Set create info
+        let create_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(set_layouts);
+        // Create pipeline layout
+        let layout = unsafe {
+            context
+                .try_borrow()?
+                .logical_device()
+                .create_pipeline_layout(&create_info, None)
+        }?;
+        Ok(Self {
+            layout: VKHandle::new(context, layout, false),
+        })
+    }
+}
+
+impl VKObject<vk::PipelineLayout> for PipelineLayout {
+    fn handle(&self) -> &VKHandle<vk::PipelineLayout> {
+        &self.layout
+    }
+
+    fn handle_mut(&mut self) -> &mut VKHandle<vk::PipelineLayout> {
+        &mut self.layout
+    }
+
+    fn object_type() -> vk::DebugReportObjectTypeEXT {
+        vk::DebugReportObjectTypeEXT::PIPELINE_LAYOUT
+    }
+
+    fn set_children_names(&mut self) -> Result<(), FennecError> {
+        Ok(())
+    }
+}
+
 /// Trait for Vulkan pipelines
 pub trait Pipeline {
     /// Gets the handle of the wrapped Vulkan pipeline
     fn pipeline_handle(&self) -> &VKHandle<vk::Pipeline>;
+
+    /// Gets the pipeline layout
+    fn layout(&self) -> &PipelineLayout;
 }

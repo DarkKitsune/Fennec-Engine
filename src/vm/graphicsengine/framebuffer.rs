@@ -49,8 +49,7 @@ impl Framebuffer {
                     .map(|view| view.extent().depth)
                     .max()
                     .unwrap_or(1),
-            )
-            .build();
+            );
         // Create framebuffer
         let framebuffer = unsafe {
             context
@@ -81,5 +80,9 @@ impl VKObject<vk::Framebuffer> for Framebuffer {
 
     fn object_type() -> vk::DebugReportObjectTypeEXT {
         vk::DebugReportObjectTypeEXT::FRAMEBUFFER
+    }
+
+    fn set_children_names(&mut self) -> Result<(), FennecError> {
+        Ok(())
     }
 }

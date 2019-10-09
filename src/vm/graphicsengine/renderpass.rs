@@ -3,7 +3,6 @@ use super::Context;
 use crate::error::FennecError;
 use ash::version::DeviceV1_0;
 use ash::vk;
-use itertools::Itertools;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -22,20 +21,17 @@ impl RenderPass {
         // Set render pass create info
         let subpass_infos = subpasses
             .iter()
-            .map(|subpass| {
+            .enumerate()
+            .map(|(index, _subpass)| {
                 let builder = vk::SubpassDescription::builder()
                     .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-                    .input_attachments(&subpass.input_attachments)
-                    .color_attachments(&subpass.color_attachments);
-                if let Some(depth_stencil_attachment) = subpass.depth_stencil_attachment {
-                    builder
-                        .depth_stencil_attachment(&depth_stencil_attachment)
-                        .preserve_attachments(&subpass.preserve_attachments)
-                        .build()
+                    .input_attachments(&subpasses[index].input_attachments)
+                    .color_attachments(&subpasses[index].color_attachments)
+                    .preserve_attachments(&subpasses[index].preserve_attachments);
+                if let Some(depth_stencil_attachment) = &subpasses[index].depth_stencil_attachment {
+                    *builder.depth_stencil_attachment(&depth_stencil_attachment)
                 } else {
-                    builder
-                        .preserve_attachments(&subpass.preserve_attachments)
-                        .build()
+                    *builder
                 }
             })
             .collect::<Vec<vk::SubpassDescription>>();
@@ -43,30 +39,25 @@ impl RenderPass {
             .iter()
             .enumerate()
             .map(|(index, subpass)| {
-                subpass
-                    .dependencies
-                    .iter()
-                    .map(|&dependency| {
-                        vk::SubpassDependency::builder()
-                            .src_subpass(match dependency.depends_on {
-                                DependsOn::ExternalSubpass => vk::SUBPASS_EXTERNAL,
-                                DependsOn::Subpass(depended_subpass) => depended_subpass,
-                            })
-                            .dst_subpass(index as u32)
-                            .src_stage_mask(dependency.src_stage)
-                            .dst_stage_mask(dependency.dst_stage)
-                            .src_access_mask(dependency.src_access)
-                            .dst_access_mask(dependency.dst_access)
-                            .build()
-                    })
-                    .collect::<Vec<vk::SubpassDependency>>()
+                subpass.dependencies.iter().map(move |&dependency| {
+                    *vk::SubpassDependency::builder()
+                        .src_subpass(match dependency.depends_on {
+                            DependsOn::ExternalSubpass => vk::SUBPASS_EXTERNAL,
+                            DependsOn::Subpass(depended_subpass) => depended_subpass,
+                        })
+                        .dst_subpass(index as u32)
+                        .src_stage_mask(dependency.src_stage)
+                        .dst_stage_mask(dependency.dst_stage)
+                        .src_access_mask(dependency.src_access)
+                        .dst_access_mask(dependency.dst_access)
+                })
             })
-            .concat();
+            .flatten()
+            .collect::<Vec<vk::SubpassDependency>>();
         let create_info = vk::RenderPassCreateInfo::builder()
             .attachments(attachments)
             .subpasses(&subpass_infos)
-            .dependencies(&dependencies)
-            .build();
+            .dependencies(&dependencies);
         // Create render pass
         let render_pass = unsafe {
             context
@@ -92,6 +83,10 @@ impl VKObject<vk::RenderPass> for RenderPass {
 
     fn object_type() -> vk::DebugReportObjectTypeEXT {
         vk::DebugReportObjectTypeEXT::RENDER_PASS
+    }
+
+    fn set_children_names(&mut self) -> Result<(), FennecError> {
+        Ok(())
     }
 }
 

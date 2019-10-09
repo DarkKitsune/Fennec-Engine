@@ -30,6 +30,8 @@ where
     TIterator: Iterator<Item = Result<TOk, FennecError>>,
 {
     fn handle_results(self) -> Result<IteratorOk<TOk>, FennecError> {
+        //! Using a for loop for this intentionally, to enable handling results on items
+        //! So don't change!!
         let mut items = Vec::new();
         for item in self {
             items.push(MaybeUninit::new(item?));
