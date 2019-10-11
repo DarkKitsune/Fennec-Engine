@@ -420,7 +420,10 @@ fn create_instance(entry: &Entry) -> Result<Instance, FennecError> {
         .iter()
         .map(|e| e.as_ptr())
         .collect::<Vec<*const c_char>>();
-    let layers = [CString::new("VK_LAYER_LUNARG_standard_validation")?];
+    let layers = [
+        CString::new("VK_LAYER_LUNARG_standard_validation")?,
+        CString::new("VK_LAYER_LUNARG_monitor")?,
+    ];
     //validate_layer_availability(&layers)?;
     let layers_raw = layers
         .iter()
@@ -604,6 +607,7 @@ fn create_context(
 ) -> Result<(Rc<RefCell<Context>>, QueueFamilyCollection), FennecError> {
     // Load Vulkan entry functions
     let entry = Entry::new()?;
+    println!("{:?}", entry.enumerate_instance_layer_properties());
     // Create instance
     let instance = create_instance(&entry)?;
     // Load instance extensions

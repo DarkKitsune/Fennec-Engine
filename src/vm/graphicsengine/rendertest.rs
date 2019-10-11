@@ -121,19 +121,18 @@ impl RenderTest {
         }];
         // Create graphics states
         let graphics_states = GraphicsStates {
-            culling_state: CullingState {
-                enable: false,
-                ..Default::default()
-            },
-            depth_state: DepthState {
-                enable_test: false,
-                enable_write: false,
-                ..Default::default()
-            },
+            culling_state: Default::default(),
+            depth_state: Default::default(),
             blend_state: BlendState {
                 enable_logic_op: false,
                 color_attachment_blend_functions: vec![
                     *vk::PipelineColorBlendAttachmentState::builder()
+                        .color_write_mask(
+                            vk::ColorComponentFlags::R
+                            | vk::ColorComponentFlags::G
+                            | vk::ColorComponentFlags::B
+                            | vk::ColorComponentFlags::A
+                        )
                         .blend_enable(false)
                         .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
                         .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_DST_ALPHA)

@@ -81,7 +81,7 @@ union Code {
     code_u32: [u32; MAX_SHADER_SIZE],
 }
 
-fn validate_spirv(spirv: &SPIRV) -> Result<(), FennecError> {
-    // TODO: Implement this, and make validating required before using
+// TODO: Implement this, and make validating required before using
+fn _validate_spirv(_spirv: &SPIRV) -> Result<(), FennecError> {
     Ok(())
 }

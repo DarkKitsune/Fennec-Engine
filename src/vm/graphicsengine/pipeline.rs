@@ -372,7 +372,7 @@ pub struct CullingState {
 }
 
 /// Describes a depth test/write mode
-#[derive(Default, Copy, Clone)]
+#[derive(Copy, Clone)]
 pub struct DepthState {
     /// Whether depth testing is enabled
     pub enable_test: bool,
@@ -388,6 +388,22 @@ pub struct DepthState {
     pub enable_stencil_test: bool,
     pub stencil_front: vk::StencilOpState,
     pub stencil_back: vk::StencilOpState,
+}
+
+impl Default for DepthState {
+    fn default() -> Self {
+        Self {
+            enable_test: false,
+            enable_write: false,
+            compare_op: vk::CompareOp::LESS_OR_EQUAL,
+            enable_bounds_test: false,
+            bounds_min: 0.0,
+            bounds_max: 1.0,
+            enable_stencil_test: false,
+            stencil_front: Default::default(),
+            stencil_back: Default::default(),
+        }
+    }
 }
 
 /// Describes a blend mode
@@ -417,8 +433,6 @@ pub struct AdvancedGraphicsPipelineSettings {
     pub depth_bias: Option<DepthBias>,
     /// Line render width *(default=1.0)*
     pub line_width: Option<f32>,
-    /// Rasterization sample count *(default=TYPE_1)*
-    pub sample_count: Option<vk::SampleCountFlags>,
     /// Pipeline states (settings) that can be changed through commands
     pub dynamic_states: Option<Vec<vk::DynamicState>>,
 }
