@@ -8,7 +8,8 @@ use std::cell::RefCell;
 use std::io::Read;
 use std::rc::Rc;
 
-pub const MAX_SHADER_SIZE: usize = 102400;
+/// Limit shaders to 100kb
+pub const MAX_SHADER_SIZE: usize = 1024 * 100;
 
 /// A framebuffer
 pub struct ShaderModule {

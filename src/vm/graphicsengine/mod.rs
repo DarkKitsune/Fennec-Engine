@@ -312,7 +312,7 @@ unsafe extern "system" fn debug_report_callback_func(
 /// This should only be done on a machine with the LunarG Vulkan SDK
 fn compile_shaders() -> Result<(), FennecError> {
     const COMPILER: &str = "glslangValidator";
-    let options = vec![String::from("-V")];
+    let options = vec![String::from("-V100")];
 
     // Exit early if no shader sources directory
     if !crate::paths::SHADER_SOURCES.exists() {
@@ -607,7 +607,6 @@ fn create_context(
 ) -> Result<(Rc<RefCell<Context>>, QueueFamilyCollection), FennecError> {
     // Load Vulkan entry functions
     let entry = Entry::new()?;
-    println!("{:?}", entry.enumerate_instance_layer_properties());
     // Create instance
     let instance = create_instance(&entry)?;
     // Load instance extensions

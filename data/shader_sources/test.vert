@@ -8,9 +8,9 @@ out gl_PerVertex
 };
 
 const vec3 POSITION[3] = vec3[](
-	vec3(0.0, 1.0, 0.5),
-	vec3(1.0, 1.0, 0.5),
-	vec3(0.5, 0.0, 0.5)
+	vec3(-1.0, -1.0, 0.0),
+	vec3(1.0, -1.0, 0.0),
+	vec3(0.0, 1.0, 0.0)
 );
 
 const vec3 COLOR[3] = vec3[](

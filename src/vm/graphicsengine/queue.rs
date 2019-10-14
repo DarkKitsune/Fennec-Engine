@@ -1,3 +1,4 @@
+use super::buffer::Buffer;
 use super::framebuffer::Framebuffer;
 use super::image::Image;
 use super::pipeline::GraphicsPipeline;
@@ -373,6 +374,17 @@ impl Queue {
                     .command_buffers(&submit_command_buffers)],
                 fence.map(|e| *e.handle().handle()).unwrap_or_default(),
             )
+        }?;
+        Ok(())
+    }
+
+    /// Pause the current thread until the queue is idle
+    pub fn wait(&self) -> Result<(), FennecError> {
+        unsafe {
+            self.context()
+                .try_borrow()?
+                .logical_device()
+                .queue_wait_idle(*self.handle().handle())
         }?;
         Ok(())
     }
@@ -805,6 +817,35 @@ impl<'a> ActiveGraphicsPipeline<'a> {
     /// Consume the ActiveRenderPass, ending the render pass
     pub fn end(self) {}
 
+    /// Bind an index buffer
+    pub fn bind_index_buffer(
+        &self,
+        buffer: &Buffer,
+        offset_bytes: u64,
+        index_type: vk::IndexType,
+    ) -> Result<(), FennecError> {
+        unsafe {
+            self.active_render_pass
+                .command_buffer_writer
+                .command_buffer
+                .context()
+                .try_borrow()?
+                .logical_device()
+                .cmd_bind_index_buffer(
+                    *self
+                        .active_render_pass
+                        .command_buffer_writer
+                        .command_buffer
+                        .handle()
+                        .handle(),
+                    *buffer.handle().handle(),
+                    offset_bytes,
+                    index_type,
+                );
+            Ok(())
+        }
+    }
+
     /// Dispatch a draw
     pub fn draw(
         &self,
@@ -836,6 +877,45 @@ impl<'a> ActiveGraphicsPipeline<'a> {
                     vertex_count,
                     instance_count,
                     first_vertex,
+                    first_instance,
+                );
+            Ok(())
+        }
+    }
+
+    /// Dispatch an indexed draw
+    pub fn draw_indexed(
+        &self,
+        first_index: u32,
+        index_count: u32,
+        vertex_offset: i32,
+        first_instance: u32,
+        instance_count: u32,
+    ) -> Result<(), FennecError> {
+        if index_count == 0 {
+            return Err(FennecError::new("Index count was 0"));
+        }
+        if instance_count == 0 {
+            return Err(FennecError::new("Instance count was 0"));
+        }
+        unsafe {
+            self.active_render_pass
+                .command_buffer_writer
+                .command_buffer
+                .context()
+                .try_borrow()?
+                .logical_device()
+                .cmd_draw_indexed(
+                    *self
+                        .active_render_pass
+                        .command_buffer_writer
+                        .command_buffer
+                        .handle()
+                        .handle(),
+                    index_count,
+                    instance_count,
+                    first_index,
+                    vertex_offset,
                     first_instance,
                 );
             Ok(())

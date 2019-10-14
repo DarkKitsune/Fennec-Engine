@@ -1,8 +1,6 @@
 use super::framebuffer::Framebuffer;
 use super::image::Image;
-use super::pipeline::{
-    BlendState, CullingState, DepthState, GraphicsPipeline, GraphicsStates, Viewport,
-};
+use super::pipeline::{BlendState, GraphicsPipeline, GraphicsStates, Viewport};
 use super::queue::QueueFamilyCollection;
 use super::renderpass::{RenderPass, Subpass};
 use super::shadermodule::ShaderModule;
@@ -112,8 +110,8 @@ impl RenderTest {
         let viewports = [Viewport {
             x: 0.0,
             y: 0.0,
-            width: 1.0,
-            height: 1.0,
+            width: swapchain.extent().width as f32,
+            height: swapchain.extent().height as f32,
             min_depth: 0.0,
             max_depth: 1.0,
             scissor_offset: vk::Offset2D { x: 0, y: 0 },
@@ -127,19 +125,19 @@ impl RenderTest {
                 enable_logic_op: false,
                 color_attachment_blend_functions: vec![
                     *vk::PipelineColorBlendAttachmentState::builder()
-                        .color_write_mask(
-                            vk::ColorComponentFlags::R
-                            | vk::ColorComponentFlags::G
-                            | vk::ColorComponentFlags::B
-                            | vk::ColorComponentFlags::A
-                        )
-                        .blend_enable(false)
+                        .blend_enable(true)
                         .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
                         .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_DST_ALPHA)
                         .color_blend_op(vk::BlendOp::ADD)
                         .src_alpha_blend_factor(vk::BlendFactor::ONE)
                         .dst_alpha_blend_factor(vk::BlendFactor::ONE_MINUS_DST_ALPHA)
-                        .alpha_blend_op(vk::BlendOp::ADD),
+                        .alpha_blend_op(vk::BlendOp::ADD)
+                        .color_write_mask(
+                            vk::ColorComponentFlags::R
+                                | vk::ColorComponentFlags::G
+                                | vk::ColorComponentFlags::B
+                                | vk::ColorComponentFlags::A,
+                        ),
                 ],
                 ..Default::default()
             },

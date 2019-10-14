@@ -158,7 +158,8 @@ impl GraphicsPipeline {
             .line_width(advanced_settings.line_width.unwrap_or(1.0));
         // Multisample state
         let multisample_state = vk::PipelineMultisampleStateCreateInfo::builder()
-            .rasterization_samples(vk::SampleCountFlags::TYPE_1);
+            .rasterization_samples(vk::SampleCountFlags::TYPE_1)
+            .min_sample_shading(1.0);
         // Depth/stencil state
         let depth_stencil_state = vk::PipelineDepthStencilStateCreateInfo::builder()
             .depth_test_enable(states.depth_state.enable_test)

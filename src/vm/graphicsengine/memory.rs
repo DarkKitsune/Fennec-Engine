@@ -108,7 +108,7 @@ fn get_memory_type_index(
         .iter()
         .take(count as usize)
         .enumerate()
-        .find(|e| (e.1).property_flags == properties)
+        .find(|e| (e.1).property_flags & properties == properties)
         .map(|e| e.0 as u32)
         .ok_or_else(|| {
             FennecError::new(format!(
