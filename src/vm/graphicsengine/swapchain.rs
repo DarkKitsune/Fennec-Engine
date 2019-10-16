@@ -1,7 +1,7 @@
 use super::image::Image;
 use super::imageview::ImageView;
 use super::memory::Memory;
-use super::queue::Queue;
+use super::queuefamily::Queue;
 use super::sync::{Fence, Semaphore};
 use super::vkobject::{VKHandle, VKObject};
 use super::Context;

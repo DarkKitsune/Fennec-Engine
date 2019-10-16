@@ -1,3 +1,4 @@
+use super::descriptorpool::DescriptorSetLayout;
 use super::renderpass::RenderPass;
 use super::vkobject::{VKHandle, VKObject};
 use super::Context;
@@ -21,7 +22,7 @@ impl GraphicsPipeline {
         context: &Rc<RefCell<Context>>,
         render_pass: &RenderPass,
         subpass: u32,
-        set_layouts: &[vk::DescriptorSetLayout],
+        set_layouts: &[&DescriptorSetLayout],
         vertex_input_bindings: &[VertexInputBinding],
         topology: vk::PrimitiveTopology,
         stages: &[vk::PipelineShaderStageCreateInfo],
@@ -459,10 +460,14 @@ pub struct PipelineLayout {
 impl PipelineLayout {
     pub fn new(
         context: &Rc<RefCell<Context>>,
-        set_layouts: &[vk::DescriptorSetLayout],
+        set_layouts: &[&DescriptorSetLayout],
     ) -> Result<Self, FennecError> {
+        let set_layouts = set_layouts
+            .iter()
+            .map(|layout| *layout.handle().handle())
+            .collect::<Vec<vk::DescriptorSetLayout>>();
         // Set create info
-        let create_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(set_layouts);
+        let create_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(&set_layouts);
         // Create pipeline layout
         let layout = unsafe {
             context

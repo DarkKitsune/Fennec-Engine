@@ -1,5 +1,5 @@
 use super::memory::{Memory, MemoryMap};
-use super::queue::QueueFamily;
+use super::queuefamily::QueueFamily;
 use super::vkobject::{VKHandle, VKObject};
 use super::Context;
 use crate::error::FennecError;

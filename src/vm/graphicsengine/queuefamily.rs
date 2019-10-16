@@ -1,7 +1,9 @@
 use super::buffer::Buffer;
+use super::cache::{Cache, Handle};
+use super::descriptorpool::DescriptorSet;
 use super::framebuffer::Framebuffer;
 use super::image::Image;
-use super::pipeline::GraphicsPipeline;
+use super::pipeline::{GraphicsPipeline, Pipeline};
 use super::renderpass::RenderPass;
 use super::sync::{Fence, Semaphore};
 use super::vkobject::{VKHandle, VKObject};
@@ -13,7 +15,6 @@ use ash::version::DeviceV1_0;
 use ash::vk;
 use ash::{Entry, Instance};
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 /// A collection of general purpose queue families
@@ -455,7 +456,7 @@ impl CommandPoolCollection {
 /// A vulkan command pool
 pub struct CommandPool {
     command_pool: VKHandle<vk::CommandPool>,
-    command_buffers: HashMap<String, Vec<CommandBuffer>>,
+    command_buffers: Cache<Vec<CommandBuffer>>,
 }
 
 impl CommandPool {
@@ -481,60 +482,53 @@ impl CommandPool {
         }?;
         Ok(Self {
             command_pool: VKHandle::new(context, command_pool, false),
-            command_buffers: HashMap::new(),
+            command_buffers: Cache::new(),
         })
     }
 
-    /// Create a set of command buffers under a specified name
+    /// Creates a set of command buffers
     pub fn create_command_buffers(
         &mut self,
-        name: impl Into<String>,
         count: u32,
-    ) -> Result<Vec<&mut CommandBuffer>, FennecError> {
-        let key = name.into();
-        {
-            if self.command_buffers.contains_key(&key) {
-                return Err(FennecError::new(format!(
-                    "Command buffers under name {:?} already exist",
-                    key
-                )));
-            }
-        }
-        let command_buffers = {
-            let context = self.context_mut().clone();
-            CommandBuffer::new(&context, self, count)?
-        };
-        self.command_buffers.insert(key.clone(), command_buffers);
-        Ok(self.command_buffers_mut(key)?)
+    ) -> Result<(Handle<Vec<CommandBuffer>>, &mut [CommandBuffer]), FennecError> {
+        let handle = self
+            .command_buffers
+            .insert(CommandBuffer::new(self.context(), self, count)?);
+        Ok((handle, self.command_buffers_mut(handle)?))
     }
 
-    /// Get the set of command buffers under the specified name
+    /// Gets the set of command buffers pointed to by the specified handle
     pub fn command_buffers(
         &self,
-        name: impl Into<String>,
-    ) -> Result<Vec<&CommandBuffer>, FennecError> {
-        let key = name.into();
-        let buffers = self.command_buffers.get(&key).ok_or_else(|| {
-            FennecError::new(format!("No command buffers exist under name {:?}", &key))
-        })?;
-        let refs = buffers.iter().map(|e| e).collect::<Vec<&CommandBuffer>>();
-        Ok(refs)
+        handle: Handle<Vec<CommandBuffer>>,
+    ) -> Result<&[CommandBuffer], FennecError> {
+        Ok(self
+            .command_buffers
+            .get(handle)
+            .ok_or_else(|| {
+                FennecError::new(format!(
+                    "No command buffers exist under handle {:?}",
+                    handle
+                ))
+            })?
+            .as_slice())
     }
 
-    /// Get the set of command buffers under the specified name
+    /// Gets the set of command buffers pointed to by the specified handle
     pub fn command_buffers_mut(
         &mut self,
-        name: impl Into<String>,
-    ) -> Result<Vec<&mut CommandBuffer>, FennecError> {
-        let key = name.into();
-        let buffers = self.command_buffers.get_mut(&key).ok_or_else(|| {
-            FennecError::new(format!("No command buffers exist under name {:?}", &key))
-        })?;
-        let refs = buffers
-            .iter_mut()
-            .map(|e| e)
-            .collect::<Vec<&mut CommandBuffer>>();
-        Ok(refs)
+        handle: Handle<Vec<CommandBuffer>>,
+    ) -> Result<&mut [CommandBuffer], FennecError> {
+        Ok(self
+            .command_buffers
+            .get_mut(handle)
+            .ok_or_else(|| {
+                FennecError::new(format!(
+                    "No command buffers exist under handle {:?}",
+                    handle
+                ))
+            })?
+            .as_mut_slice())
     }
 }
 
@@ -553,9 +547,9 @@ impl VKObject<vk::CommandPool> for CommandPool {
 
     fn set_children_names(&mut self) -> Result<(), FennecError> {
         let own_name = String::from(self.name());
-        for (list_name, list) in self.command_buffers.iter_mut() {
+        for (handle, list) in self.command_buffers.iter_mut() {
             for (index, command_buffer) in list.iter_mut().enumerate() {
-                command_buffer.set_name(&format!("{}.{}.{}", own_name, list_name, index))?;
+                command_buffer.set_name(&format!("{}[{:?}].{}", own_name, handle, index))?;
             }
         }
         Ok(())
@@ -771,7 +765,7 @@ impl<'a> ActiveRenderPass<'a> {
     /// Bind a graphics pipeline
     pub fn bind_graphics_pipeline(
         &self,
-        pipeline: &GraphicsPipeline,
+        pipeline: &'a GraphicsPipeline,
     ) -> Result<ActiveGraphicsPipeline, FennecError> {
         let command_buffer_handle = *self.command_buffer_writer.command_buffer.handle().handle();
         unsafe {
@@ -787,6 +781,7 @@ impl<'a> ActiveRenderPass<'a> {
                 );
             // TODO: Start pipeline usage benchmark
             Ok(ActiveGraphicsPipeline {
+                pipeline,
                 active_render_pass: self,
             })
         }
@@ -810,6 +805,7 @@ impl<'a> Drop for ActiveRenderPass<'a> {
 /// Wrapper around an ActiveRenderPass that has a graphics pipeline bound\
 /// Enables writing commands that require an active graphics pipeline
 pub struct ActiveGraphicsPipeline<'a> {
+    pipeline: &'a GraphicsPipeline,
     active_render_pass: &'a ActiveRenderPass<'a>,
 }
 
@@ -841,6 +837,40 @@ impl<'a> ActiveGraphicsPipeline<'a> {
                     *buffer.handle().handle(),
                     offset_bytes,
                     index_type,
+                );
+            Ok(())
+        }
+    }
+
+    /// Bind a descriptor set
+    pub fn bind_descriptor_sets(
+        &self,
+        descriptor_sets: &[&DescriptorSet],
+        first_set: u32,
+    ) -> Result<(), FennecError> {
+        unsafe {
+            let descriptor_sets = descriptor_sets
+                .iter()
+                .map(|set| *set.handle().handle())
+                .collect::<Vec<vk::DescriptorSet>>();
+            self.active_render_pass
+                .command_buffer_writer
+                .command_buffer
+                .context()
+                .try_borrow()?
+                .logical_device()
+                .cmd_bind_descriptor_sets(
+                    *self
+                        .active_render_pass
+                        .command_buffer_writer
+                        .command_buffer
+                        .handle()
+                        .handle(),
+                    vk::PipelineBindPoint::GRAPHICS,
+                    *self.pipeline.layout().handle().handle(),
+                    first_set,
+                    &descriptor_sets,
+                    &[],
                 );
             Ok(())
         }

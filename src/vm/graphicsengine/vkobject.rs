@@ -194,6 +194,24 @@ impl HandleType for vk::ShaderModule {
     }
 }
 
+impl HandleType for vk::DescriptorSet {
+    fn destroy(&mut self, _context: &Rc<RefCell<Context>>) -> Result<(), FennecError> {
+        Ok(())
+    }
+}
+
+impl HandleType for vk::DescriptorSetLayout {
+    fn destroy(&mut self, context: &Rc<RefCell<Context>>) -> Result<(), FennecError> {
+        unsafe {
+            context
+                .try_borrow()?
+                .logical_device()
+                .destroy_descriptor_set_layout(*self, None)
+        };
+        Ok(())
+    }
+}
+
 pub struct VKHandle<THandleType>
 where
     THandleType: HandleType + Copy + vk::Handle,

@@ -1,11 +1,12 @@
 pub mod buffer;
-pub mod descriptorset;
+pub mod cache;
+pub mod descriptorpool;
 pub mod framebuffer;
 pub mod image;
 pub mod imageview;
 pub mod memory;
 pub mod pipeline;
-pub mod queue;
+pub mod queuefamily;
 pub mod renderpass;
 pub mod rendertest;
 pub mod shadermodule;
@@ -25,7 +26,7 @@ use ash::vk;
 use ash::{Device, Entry, Instance};
 use colored::Colorize;
 use glutin::os::windows::WindowExt;
-use queue::QueueFamilyCollection;
+use queuefamily::QueueFamilyCollection;
 use rendertest::RenderTest;
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
@@ -63,7 +64,7 @@ impl GraphicsEngine {
         let image_available_semaphore =
             Semaphore::new(&context)?.with_name("GraphicsEngine::image_available_semaphore")?;
         // Create render test stage
-        let render_test = RenderTest::new(&context, &mut queue_family_collection, &swapchain)?;
+        let render_test = RenderTest::new(&context, &swapchain, &mut queue_family_collection)?;
         // Return the graphics engine
         Ok(Self {
             context,
