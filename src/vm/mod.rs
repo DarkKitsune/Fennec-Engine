@@ -1,3 +1,4 @@
+pub mod contentengine;
 pub mod graphicsengine;
 pub mod scriptengine;
 

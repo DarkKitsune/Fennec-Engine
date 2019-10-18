@@ -86,6 +86,30 @@ impl HandleType for vk::Image {
     }
 }
 
+impl HandleType for vk::ImageView {
+    fn destroy(&mut self, context: &Rc<RefCell<Context>>) -> Result<(), FennecError> {
+        unsafe {
+            context
+                .try_borrow()?
+                .logical_device()
+                .destroy_image_view(*self, None)
+        };
+        Ok(())
+    }
+}
+
+impl HandleType for vk::Sampler {
+    fn destroy(&mut self, context: &Rc<RefCell<Context>>) -> Result<(), FennecError> {
+        unsafe {
+            context
+                .try_borrow()?
+                .logical_device()
+                .destroy_sampler(*self, None)
+        };
+        Ok(())
+    }
+}
+
 impl HandleType for vk::DeviceMemory {
     fn destroy(&mut self, context: &Rc<RefCell<Context>>) -> Result<(), FennecError> {
         unsafe {
@@ -141,18 +165,6 @@ impl HandleType for vk::Framebuffer {
                 .try_borrow()?
                 .logical_device()
                 .destroy_framebuffer(*self, None)
-        };
-        Ok(())
-    }
-}
-
-impl HandleType for vk::ImageView {
-    fn destroy(&mut self, context: &Rc<RefCell<Context>>) -> Result<(), FennecError> {
-        unsafe {
-            context
-                .try_borrow()?
-                .logical_device()
-                .destroy_image_view(*self, None)
         };
         Ok(())
     }

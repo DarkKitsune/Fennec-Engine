@@ -296,6 +296,14 @@ impl Image for SwapchainImage {
         }
     }
 
+    fn layer_count(&self) -> u32 {
+        1
+    }
+
+    fn mip_count(&self) -> u32 {
+        1
+    }
+
     fn view(
         &self,
         range: &vk::ImageSubresourceRange,

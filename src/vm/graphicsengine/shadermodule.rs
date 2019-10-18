@@ -11,14 +11,14 @@ use std::rc::Rc;
 /// Limit shaders to 100kb
 pub const MAX_SHADER_SIZE: usize = 1024 * 100;
 
-/// A framebuffer
+/// A SPIR-V shader module
 pub struct ShaderModule {
     shader_module: VKHandle<vk::ShaderModule>,
     spirv: SPIRV,
 }
 
 impl ShaderModule {
-    /// ShaderModule factory method
+    /// Factory method
     pub fn new(
         context: &Rc<RefCell<Context>>,
         source: &mut impl Read,

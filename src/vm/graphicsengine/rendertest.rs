@@ -1,28 +1,31 @@
 use super::buffer::Buffer;
-use super::cache::Handle;
 use super::descriptorpool::{
-    BufferWrite, Descriptor, DescriptorPool, DescriptorSet, DescriptorSetLayout,
+    BufferWrite, CombinedImageSamplerWrite, Descriptor, DescriptorPool, DescriptorSet,
+    DescriptorSetLayout,
 };
 use super::framebuffer::Framebuffer;
-use super::image::Image;
+use super::image::{Image, Image2D};
+use super::imageview::ImageView;
 use super::pipeline::{BlendState, GraphicsPipeline, GraphicsStates, Viewport};
 use super::queuefamily::CommandBuffer;
 use super::queuefamily::QueueFamilyCollection;
 use super::renderpass::{RenderPass, Subpass};
+use super::sampler::{Filters, Sampler};
 use super::shadermodule::ShaderModule;
 use super::swapchain::Swapchain;
 use super::sync::{Fence, Semaphore};
 use super::vkobject::VKObject;
 use super::Context;
+use crate::cache::Handle;
 use crate::error::FennecError;
 use crate::iteratorext::IteratorResults;
-use crate::paths;
+use crate::vm::contentengine::{ContentEngine, ContentType};
 use ash::vk;
+use image::{GenericImageView, ImageFormat};
 use std::cell::RefCell;
 use std::ffi::CString;
-use std::fs::File;
+use std::io::BufReader;
 use std::ops::Deref;
-use std::path::PathBuf;
 use std::rc::Rc;
 
 pub struct RenderTest {
@@ -30,6 +33,9 @@ pub struct RenderTest {
     finished_semaphore: Semaphore,
     command_buffers_handle: Handle<Vec<CommandBuffer>>,
     _color_uniform_buffer: Buffer,
+    _texture_image: Image2D,
+    _texture_image_view: ImageView,
+    _texture_sampler: Sampler,
 }
 
 impl RenderTest {
@@ -55,7 +61,7 @@ impl RenderTest {
         )?
         .with_name("RenderTest::color_uniform_buffer")?;
         {
-            let mapped = color_uniform_buffer.map(0, color_uniform_buffer.size())?;
+            let mapped = color_uniform_buffer.memory_mut().map_all()?;
             unsafe {
                 let ptr = mapped.ptr() as *mut (f32, f32, f32, f32);
                 *ptr = (1.0, 0.0, 0.0, 1.0);
@@ -63,11 +69,136 @@ impl RenderTest {
                 *ptr.offset(2) = (0.0, 0.0, 1.0, 1.0);
             }
         }
+        // Create texture
+        let texture_source = image::load(
+            BufReader::new(ContentEngine::open("test", ContentType::Image)?),
+            ImageFormat::PNG,
+        )?;
+        let texture_image = Image2D::new(
+            context,
+            vk::Extent2D {
+                width: texture_source.width(),
+                height: texture_source.height(),
+            },
+            vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
+            Some(vk::Format::B8G8R8A8_UNORM),
+            Some(vk::ImageLayout::UNDEFINED),
+            None,
+        )?
+        .with_name("RenderTest::texture_image")?;
+        {
+            // Create and fill staging buffer
+            let staging_buffer = {
+                let texture_source_raw = texture_source.to_bgra().into_raw();
+                unsafe {
+                    Buffer::from_bytes(
+                        context,
+                        &texture_source_raw,
+                        texture_source_raw.len(),
+                        vk::BufferUsageFlags::TRANSFER_SRC,
+                        None,
+                        None,
+                    )
+                }?
+                .with_name("RenderTest::new::staging_buffer")?
+            };
+            // Write command buffer to copy buffer to image
+            let copy_command_buffers_handle = {
+                let (copy_command_buffers_handle, copy_command_buffers) = queue_family_collection
+                    .graphics_mut()
+                    .command_pools_mut()
+                    .unwrap()
+                    .transient_mut()
+                    .create_command_buffers(1)?;
+                let writer = copy_command_buffers[0].begin(true, false)?;
+                writer.pipeline_barrier(
+                    vk::PipelineStageFlags::TOP_OF_PIPE,
+                    vk::PipelineStageFlags::TRANSFER,
+                    None,
+                    None,
+                    None,
+                    Some(&[*vk::ImageMemoryBarrier::builder()
+                        .image(*texture_image.handle().handle())
+                        .subresource_range(texture_image.range_color_basic())
+                        .old_layout(vk::ImageLayout::UNDEFINED)
+                        .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                        .src_access_mask(Default::default())
+                        .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE)]),
+                )?;
+                unsafe {
+                    writer.copy_buffer_to_image(
+                        &staging_buffer,
+                        &texture_image,
+                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                        &[Buffer::copy_to_image(
+                            0,
+                            &texture_image,
+                            vk::ImageAspectFlags::COLOR,
+                            0,
+                        )],
+                    )?;
+                }
+                writer.pipeline_barrier(
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    None,
+                    None,
+                    None,
+                    Some(&[*vk::ImageMemoryBarrier::builder()
+                        .image(*texture_image.handle().handle())
+                        .subresource_range(texture_image.range_color_basic())
+                        .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
+                        .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                        .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
+                        .dst_access_mask(vk::AccessFlags::SHADER_READ)]),
+                )?;
+                copy_command_buffers_handle
+            };
+            // Submit command buffer
+            let queue = queue_family_collection
+                .graphics()
+                .queue_of_priority(1.0)
+                .unwrap();
+            queue.submit(
+                Some(&[&queue_family_collection
+                    .graphics()
+                    .command_pools()
+                    .unwrap()
+                    .transient()
+                    .command_buffers(copy_command_buffers_handle)?[0]]),
+                None,
+                None,
+                None,
+            )?;
+            // Wait for the copy to be finished
+            queue.wait()?;
+            // Clean up command buffers
+            queue_family_collection
+                .graphics_mut()
+                .command_pools_mut()
+                .unwrap()
+                .transient_mut()
+                .destroy_command_buffers(copy_command_buffers_handle)?;
+        }
+        let texture_image_view = texture_image
+            .view(&texture_image.range_color_basic(), None)?
+            .with_name("RenderTest::texture_image_view")?;
+        // Create sampler
+        let texture_sampler = Sampler::new(
+            context,
+            Filters {
+                min: vk::Filter::NEAREST,
+                mag: vk::Filter::NEAREST,
+            },
+            Default::default(),
+            Default::default(),
+            &Default::default(),
+        )?
+        .with_name("RenderTest::texture_sampler")?;
         // Update descriptor set
         let descriptor_set = pipeline.descriptor_set()?;
-        pipeline
-            .descriptor_pool
-            .update_descriptor_sets(&[descriptor_set.write_uniform_buffers(
+        pipeline.descriptor_pool.update_descriptor_sets(&[
+            descriptor_set.write_uniform_buffers(
                 0,
                 0,
                 &[BufferWrite {
@@ -75,7 +206,17 @@ impl RenderTest {
                     offset: 0,
                     length: color_uniform_buffer.size(),
                 }],
-            )?])?;
+            )?,
+            descriptor_set.write_combined_image_samplers(
+                1,
+                0,
+                &[CombinedImageSamplerWrite {
+                    image_view: &texture_image_view,
+                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    sampler: &texture_sampler,
+                }],
+            )?,
+        ])?;
         // Create command buffers
         let (command_buffers_handle, command_buffers) = queue_family_collection
             .graphics_mut()
@@ -133,6 +274,9 @@ impl RenderTest {
             finished_semaphore,
             command_buffers_handle,
             _color_uniform_buffer: color_uniform_buffer,
+            _texture_image: texture_image,
+            _texture_image_view: texture_image_view,
+            _texture_sampler: texture_sampler,
         })
     }
 
@@ -220,12 +364,20 @@ impl RenderTestPipeline {
         let descriptor_set_layout = DescriptorSetLayout::new(
             context,
             1,
-            vec![Descriptor {
-                shader_stage: vk::ShaderStageFlags::VERTEX,
-                shader_binding_location: 0,
-                descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
-                count: 1,
-            }],
+            vec![
+                Descriptor {
+                    shader_stage: vk::ShaderStageFlags::VERTEX,
+                    shader_binding_location: 0,
+                    descriptor_type: vk::DescriptorType::UNIFORM_BUFFER,
+                    count: 1,
+                },
+                Descriptor {
+                    shader_stage: vk::ShaderStageFlags::FRAGMENT,
+                    shader_binding_location: 1,
+                    descriptor_type: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                    count: 1,
+                },
+            ],
         )?
         .with_name("RenderTestPipeline::descriptor_set_layout")?;
         let mut descriptor_pool = DescriptorPool::new(context, &[&descriptor_set_layout], None)?
@@ -236,14 +388,14 @@ impl RenderTestPipeline {
         // Create vertex shader
         let vertex_shader = ShaderModule::new(
             context,
-            &mut File::open(&paths::SHADERS.join(PathBuf::from("test.vert.spv")))?,
+            &mut ContentEngine::open("test.vert", ContentType::ShaderModule)?,
         )?
         .with_name("RenderTestPipeline::vertex_shader")?;
         let vertex_entry = CString::new(vertex_shader.entry_point())?;
         // Create fragment shader
         let fragment_shader = ShaderModule::new(
             context,
-            &mut File::open(&paths::SHADERS.join(PathBuf::from("test.frag.spv")))?,
+            &mut ContentEngine::open("test.frag", ContentType::ShaderModule)?,
         )?
         .with_name("RenderTestPipeline::fragment_shader")?;
         let fragment_entry = CString::new(fragment_shader.entry_point())?;

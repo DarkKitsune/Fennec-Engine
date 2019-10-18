@@ -7,11 +7,13 @@ extern crate ash;
 extern crate colored;
 extern crate glsl_layout;
 extern crate glutin;
+extern crate image;
 extern crate spirv_reflect;
 extern crate winapi;
 
 #[macro_use]
 pub mod error;
+pub mod cache;
 pub mod fwindow;
 pub mod iteratorext;
 pub mod log;
@@ -49,6 +51,7 @@ fn main() {
         manifest::ENGINE_VERSION.2
     );
     // Initialization
+    paths::init();
     //log::init();
     // Create Fennec window
     let window = FWindow::new().expect("Could not create window");

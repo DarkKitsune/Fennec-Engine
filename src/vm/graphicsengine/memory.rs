@@ -11,6 +11,7 @@ use std::rc::Rc;
 pub struct Memory {
     memory: VKHandle<vk::DeviceMemory>,
     memory_flags: vk::MemoryPropertyFlags,
+    size: u64,
 }
 
 impl Memory {
@@ -37,15 +38,30 @@ impl Memory {
         Ok(Self {
             memory: VKHandle::new(context, memory, false),
             memory_flags,
+            size: memory_reqs.size,
         })
     }
 
-    /// Maps a portion of the memory to host memory for writing
-    pub fn map(&mut self, offset: u64, size: u64) -> Result<MemoryMap, FennecError> {
+    /// Gets the allocated size of the memory
+    pub fn size(&self) -> u64 {
+        self.size
+    }
+
+    /// Maps a region of the memory to host memory for writing
+    pub fn map_region(&mut self, offset: u64, size: u64) -> Result<MemoryMap, FennecError> {
         if !self.mappable() {
             return Err(FennecError::new(format!(
                 "Cannot map {} as it is either protected or host-invisible",
                 self.name()
+            )));
+        }
+        if offset + size > self.size() {
+            return Err(FennecError::new(format!(
+                "Region (offset={} size={}) is not within {}'s mappable range (size={})",
+                offset,
+                size,
+                self.name(),
+                self.size()
             )));
         }
         let ptr = unsafe {
@@ -61,6 +77,10 @@ impl Memory {
             memory: self,
             ptr,
         })
+    }
+
+    pub fn map_all(&mut self) -> Result<MemoryMap, FennecError> {
+        self.map_region(0, self.size())
     }
 
     /// Gets whether the memory is mappable to host memory
@@ -108,7 +128,10 @@ fn get_memory_type_index(
         .iter()
         .take(count as usize)
         .enumerate()
-        .find(|e| (e.1).property_flags & properties == properties)
+        .find(|e| {
+            type_bits & 2u32.pow(e.0 as u32) == 2u32.pow(e.0 as u32)
+                && (e.1).property_flags & properties == properties
+        })
         .map(|e| e.0 as u32)
         .ok_or_else(|| {
             FennecError::new(format!(

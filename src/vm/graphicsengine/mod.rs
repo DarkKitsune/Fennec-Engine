@@ -1,5 +1,4 @@
 pub mod buffer;
-pub mod cache;
 pub mod descriptorpool;
 pub mod framebuffer;
 pub mod image;
@@ -9,6 +8,7 @@ pub mod pipeline;
 pub mod queuefamily;
 pub mod renderpass;
 pub mod rendertest;
+pub mod sampler;
 pub mod shadermodule;
 pub mod swapchain;
 pub mod sync;

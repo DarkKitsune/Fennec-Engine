@@ -139,3 +139,9 @@ impl From<std::string::FromUtf8Error> for FennecError {
         FennecError::from_error("Could not convert string from UTF-8", Box::new(error))
     }
 }
+
+impl From<image::ImageError> for FennecError {
+    fn from(error: image::ImageError) -> FennecError {
+        FennecError::from_error("Image error occurred", Box::new(error))
+    }
+}

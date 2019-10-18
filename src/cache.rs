@@ -27,6 +27,11 @@ impl<T> Cache<T> {
         handle
     }
 
+    /// Removes a value from the cache
+    pub fn remove(&mut self, handle: Handle<T>) -> Option<T> {
+        self.data.remove(&handle)
+    }
+
     /// Gets a reference to a value stored within the cache
     pub fn get(&self, handle: Handle<T>) -> Option<&T> {
         self.data.get(&handle)

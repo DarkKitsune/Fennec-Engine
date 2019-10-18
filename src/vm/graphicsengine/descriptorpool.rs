@@ -1,7 +1,9 @@
 use super::buffer::Buffer;
-use super::cache::{Cache, Handle};
+use super::imageview::ImageView;
+use super::sampler::Sampler;
 use super::vkobject::{VKHandle, VKObject};
 use super::Context;
+use crate::cache::{Cache, Handle};
 use crate::error::FennecError;
 use ash::version::DeviceV1_0;
 use ash::vk;
@@ -217,7 +219,8 @@ impl DescriptorSet {
         &self.layout
     }
 
-    /// Creates a vk::WriteDescriptorSet describing a buffer write to a descriptor in the set
+    /// Creates a vk::WriteDescriptorSet describing buffer writes to a
+    /// descriptor in the set
     pub fn write_uniform_buffers(
         &self,
         descriptor_index: u32,
@@ -247,6 +250,39 @@ impl DescriptorSet {
             .dst_array_element(start)
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
             .buffer_info(&buffer_writes))
+    }
+
+    /// Creates a vk::WriteDescriptorSet describing combined image-sampler
+    /// writes to a descriptor in the set
+    pub fn write_combined_image_samplers(
+        &self,
+        descriptor_index: u32,
+        start: u32,
+        image_samplers: &[CombinedImageSamplerWrite],
+    ) -> Result<vk::WriteDescriptorSet, FennecError> {
+        let image_sampler_writes = image_samplers
+            .iter()
+            .map(|write| {
+                *vk::DescriptorImageInfo::builder()
+                    .image_view(*write.image_view.handle().handle())
+                    .image_layout(write.image_layout)
+                    .sampler(*write.sampler.handle().handle())
+            })
+            .collect::<Vec<vk::DescriptorImageInfo>>();
+        // Check arguments
+        self.write_argument_check(
+            descriptor_index,
+            start,
+            image_sampler_writes.len() as u32,
+            vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+        )?;
+        // Return write info
+        Ok(*vk::WriteDescriptorSet::builder()
+            .dst_set(*self.handle().handle())
+            .dst_binding(descriptor_index)
+            .dst_array_element(start)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .image_info(&image_sampler_writes))
     }
 
     /// Used to check the arguments passed to write_* functions
@@ -305,11 +341,18 @@ impl VKObject<vk::DescriptorSet> for DescriptorSet {
     }
 }
 
-/// Describes a write to a buffer
+/// Describes a buffer write to a descriptor
 pub struct BufferWrite<'a> {
     pub buffer: &'a Buffer,
     pub offset: u64,
     pub length: u64,
+}
+
+// Describes a combined image sampler write to a descriptor
+pub struct CombinedImageSamplerWrite<'a> {
+    pub image_view: &'a ImageView,
+    pub image_layout: vk::ImageLayout,
+    pub sampler: &'a Sampler,
 }
 
 /// Describes the layout for a type of descriptor set from a descriptor pool

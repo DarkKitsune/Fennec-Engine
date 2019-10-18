@@ -1,5 +1,4 @@
 use super::buffer::Buffer;
-use super::cache::{Cache, Handle};
 use super::descriptorpool::DescriptorSet;
 use super::framebuffer::Framebuffer;
 use super::image::Image;
@@ -8,6 +7,7 @@ use super::renderpass::RenderPass;
 use super::sync::{Fence, Semaphore};
 use super::vkobject::{VKHandle, VKObject};
 use super::Context;
+use crate::cache::{Cache, Handle};
 use crate::error::FennecError;
 use crate::iteratorext::IteratorResults;
 use ash::extensions::khr::Surface;
@@ -290,11 +290,12 @@ impl QueueFamily {
 }
 
 /// The kind of a queue or queue family
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Hash)]
 pub enum QueueKind {
     Present,
     Graphics,
     Transfer,
+    Compute,
 }
 
 /// A Vulkan queue
@@ -457,6 +458,7 @@ impl CommandPoolCollection {
 pub struct CommandPool {
     command_pool: VKHandle<vk::CommandPool>,
     command_buffers: Cache<Vec<CommandBuffer>>,
+    kind: QueueKind,
 }
 
 impl CommandPool {
@@ -483,7 +485,13 @@ impl CommandPool {
         Ok(Self {
             command_pool: VKHandle::new(context, command_pool, false),
             command_buffers: Cache::new(),
+            kind: family.kind(),
         })
+    }
+
+    /// Gets the kind of queues the command pool is used for
+    pub fn kind(&self) -> QueueKind {
+        self.kind
     }
 
     /// Creates a set of command buffers
@@ -495,6 +503,27 @@ impl CommandPool {
             .command_buffers
             .insert(CommandBuffer::new(self.context(), self, count)?);
         Ok((handle, self.command_buffers_mut(handle)?))
+    }
+
+    /// Destroys a set of command buffers
+    pub fn destroy_command_buffers(
+        &mut self,
+        handle: Handle<Vec<CommandBuffer>>,
+    ) -> Result<(), FennecError> {
+        let command_buffers = self
+            .command_buffers
+            .remove(handle)
+            .unwrap()
+            .into_iter()
+            .map(|command_buffer| *command_buffer.handle().handle())
+            .collect::<Vec<vk::CommandBuffer>>();
+        unsafe {
+            self.context()
+                .try_borrow()?
+                .logical_device()
+                .free_command_buffers(*self.handle().handle(), &command_buffers)
+        };
+        Ok(())
     }
 
     /// Gets the set of command buffers pointed to by the specified handle
@@ -560,10 +589,11 @@ impl VKObject<vk::CommandPool> for CommandPool {
 pub struct CommandBuffer {
     command_buffer: VKHandle<vk::CommandBuffer>,
     writing: bool,
+    kind: QueueKind,
 }
 
 impl CommandBuffer {
-    /// CommandBuffer factory method
+    /// Factory method
     fn new(
         context: &Rc<RefCell<Context>>,
         command_pool: &CommandPool,
@@ -584,11 +614,17 @@ impl CommandBuffer {
             .map(|buffer| Self {
                 command_buffer: VKHandle::new(context, *buffer, false),
                 writing: false,
+                kind: command_pool.kind(),
             })
             .collect())
     }
 
-    /// Begin writing to the command buffer
+    /// Gets the kind of queues the command buffer is to be used in
+    pub fn kind(&self) -> QueueKind {
+        self.kind
+    }
+
+    /// Begins writing to the command buffer
     pub fn begin(
         &mut self,
         used_once: bool,
@@ -622,6 +658,19 @@ impl CommandBuffer {
             command_buffer: self,
         })
     }
+
+    /// Verifies that the command buffer is for the right type of queue
+    pub fn verify_kind(&self, expected_kinds: &[QueueKind]) -> Result<(), FennecError> {
+        if expected_kinds.contains(&self.kind()) {
+            Ok(())
+        } else {
+            Err(FennecError::new(&format!(
+                "Wrong kind of command buffer ({:?}) - Expected one of {:?}",
+                self.kind(),
+                expected_kinds
+            )))
+        }
+    }
 }
 
 impl VKObject<vk::CommandBuffer> for CommandBuffer {
@@ -642,16 +691,16 @@ impl VKObject<vk::CommandBuffer> for CommandBuffer {
     }
 }
 
-/// Writer to write to a command buffer
+/// Writers to write to a command buffer
 pub struct CommandBufferWriter<'a> {
     command_buffer: &'a mut CommandBuffer,
 }
 
 impl<'a> CommandBufferWriter<'a> {
-    /// Consume the command buffer writer, ending writing to the command buffer
+    /// Consumes the command buffer writer, ending writing to the command buffer
     pub fn end(self) {}
 
-    /// Insert a pipeline barrier
+    /// Inserts a pipeline barrier
     pub fn pipeline_barrier(
         &self,
         src_stage: vk::PipelineStageFlags,
@@ -661,6 +710,11 @@ impl<'a> CommandBufferWriter<'a> {
         buffer_memory_barriers: Option<&[vk::BufferMemoryBarrier]>,
         image_memory_barriers: Option<&[vk::ImageMemoryBarrier]>,
     ) -> Result<(), FennecError> {
+        self.command_buffer.verify_kind(&[
+            QueueKind::Transfer,
+            QueueKind::Graphics,
+            QueueKind::Compute,
+        ])?;
         unsafe {
             self.command_buffer
                 .context()
@@ -679,7 +733,7 @@ impl<'a> CommandBufferWriter<'a> {
         }
     }
 
-    /// Clear the color of an image
+    /// Clears the color of an image
     /// ``image``: The image to clear
     /// ``layout``: The layout of the image
     /// ``clear_color``: The color to clear with
@@ -691,6 +745,8 @@ impl<'a> CommandBufferWriter<'a> {
         clear_color: &vk::ClearColorValue,
         ranges: &[vk::ImageSubresourceRange],
     ) -> Result<(), FennecError> {
+        self.command_buffer
+            .verify_kind(&[QueueKind::Graphics, QueueKind::Compute])?;
         unsafe {
             self.command_buffer
                 .context()
@@ -707,7 +763,7 @@ impl<'a> CommandBufferWriter<'a> {
         }
     }
 
-    /// Begin a render pass, returning an ActiveRenderPass representing it
+    /// Begins a render pass, returning an ActiveRenderPass representing it
     pub fn begin_render_pass(
         &self,
         render_pass: &RenderPass,
@@ -715,6 +771,7 @@ impl<'a> CommandBufferWriter<'a> {
         render_area: vk::Rect2D,
         clear_values: &[vk::ClearValue],
     ) -> Result<ActiveRenderPass, FennecError> {
+        self.command_buffer.verify_kind(&[QueueKind::Graphics])?;
         let begin_info = vk::RenderPassBeginInfo::builder()
             .render_pass(*render_pass.handle().handle())
             .framebuffer(*framebuffer.handle().handle())
@@ -734,6 +791,42 @@ impl<'a> CommandBufferWriter<'a> {
                 command_buffer_writer: self,
             })
         }
+    }
+
+    /// Copies regions of a buffer's contents to an image
+    pub unsafe fn copy_buffer_to_image(
+        &self,
+        source: &Buffer,
+        destination: &impl Image,
+        destination_layout: vk::ImageLayout,
+        regions: &[vk::BufferImageCopy],
+    ) -> Result<(), FennecError> {
+        self.command_buffer.verify_kind(&[
+            QueueKind::Transfer,
+            QueueKind::Graphics,
+            QueueKind::Compute,
+        ])?;
+        // Check image regions
+        for region in regions {
+            // TODO: Check buffer region as well
+            // TODO: and then remove "unsafe" if it is safe after
+            destination.verify_region_is_inside(region.image_offset, region.image_extent)?;
+        }
+        // Do the copy
+        //unsafe {
+        self.command_buffer
+            .context()
+            .try_borrow()?
+            .logical_device()
+            .cmd_copy_buffer_to_image(
+                *self.command_buffer.handle().handle(),
+                *source.handle().handle(),
+                *destination.image_handle().handle(),
+                destination_layout,
+                regions,
+            );
+        //}
+        Ok(())
     }
 }
 
