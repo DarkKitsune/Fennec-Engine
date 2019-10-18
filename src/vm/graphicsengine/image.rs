@@ -89,7 +89,7 @@ impl Image2D {
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
         )?;
         // Bind memory to image
-        unsafe { logical_device.bind_image_memory(image, *memory.handle().handle(), 0) }?;
+        unsafe { logical_device.bind_image_memory(image, memory.handle(), 0) }?;
         // Return image
         Ok(Self {
             image: VKHandle::new(context, image, false),
@@ -102,11 +102,11 @@ impl Image2D {
 }
 
 impl VKObject<vk::Image> for Image2D {
-    fn handle(&self) -> &VKHandle<vk::Image> {
+    fn wrapped_handle(&self) -> &VKHandle<vk::Image> {
         &self.image
     }
 
-    fn handle_mut(&mut self) -> &mut VKHandle<vk::Image> {
+    fn wrapped_handle_mut(&mut self) -> &mut VKHandle<vk::Image> {
         &mut self.image
     }
 
@@ -122,7 +122,7 @@ impl VKObject<vk::Image> for Image2D {
 
 impl Image for Image2D {
     fn image_handle(&self) -> &VKHandle<vk::Image> {
-        self.handle()
+        self.wrapped_handle()
     }
 
     fn memory(&self) -> Option<&Memory> {

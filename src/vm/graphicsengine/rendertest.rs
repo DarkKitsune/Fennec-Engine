@@ -118,7 +118,7 @@ impl RenderTest {
                     None,
                     None,
                     Some(&[*vk::ImageMemoryBarrier::builder()
-                        .image(*texture_image.handle().handle())
+                        .image(texture_image.handle())
                         .subresource_range(texture_image.range_color_basic())
                         .old_layout(vk::ImageLayout::UNDEFINED)
                         .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
@@ -145,7 +145,7 @@ impl RenderTest {
                     None,
                     None,
                     Some(&[*vk::ImageMemoryBarrier::builder()
-                        .image(*texture_image.handle().handle())
+                        .image(texture_image.handle())
                         .subresource_range(texture_image.range_color_basic())
                         .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
                         .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
@@ -236,7 +236,7 @@ impl RenderTest {
                 None,
                 None,
                 Some(&[*vk::ImageMemoryBarrier::builder()
-                    .image(*image.image_handle().handle())
+                    .image(image.image_handle().handle())
                     .old_layout(vk::ImageLayout::UNDEFINED)
                     .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
                     .src_access_mask(Default::default())
@@ -402,11 +402,11 @@ impl RenderTestPipeline {
         // Create stages
         let stages = [
             *vk::PipelineShaderStageCreateInfo::builder()
-                .module(*vertex_shader.handle().handle())
+                .module(vertex_shader.handle())
                 .stage(vk::ShaderStageFlags::VERTEX)
                 .name(&vertex_entry),
             *vk::PipelineShaderStageCreateInfo::builder()
-                .module(*fragment_shader.handle().handle())
+                .module(fragment_shader.handle())
                 .stage(vk::ShaderStageFlags::FRAGMENT)
                 .name(&fragment_entry),
         ];

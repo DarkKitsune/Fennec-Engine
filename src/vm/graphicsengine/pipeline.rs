@@ -190,9 +190,9 @@ impl GraphicsPipeline {
         // Set graphics pipeline create info
         let create_info = vk::GraphicsPipelineCreateInfo::builder()
             .flags(advanced_settings.flags.unwrap_or_default())
-            .render_pass(*render_pass.handle().handle())
+            .render_pass(render_pass.handle())
             .subpass(subpass)
-            .layout(*layout.handle().handle())
+            .layout(layout.handle())
             .stages(stages)
             .vertex_input_state(&vertex_input_state)
             .input_assembly_state(&input_assembly_state)
@@ -221,11 +221,11 @@ impl GraphicsPipeline {
 }
 
 impl VKObject<vk::Pipeline> for GraphicsPipeline {
-    fn handle(&self) -> &VKHandle<vk::Pipeline> {
+    fn wrapped_handle(&self) -> &VKHandle<vk::Pipeline> {
         &self.pipeline
     }
 
-    fn handle_mut(&mut self) -> &mut VKHandle<vk::Pipeline> {
+    fn wrapped_handle_mut(&mut self) -> &mut VKHandle<vk::Pipeline> {
         &mut self.pipeline
     }
 
@@ -241,7 +241,7 @@ impl VKObject<vk::Pipeline> for GraphicsPipeline {
 
 impl Pipeline for GraphicsPipeline {
     fn pipeline_handle(&self) -> &VKHandle<vk::Pipeline> {
-        self.handle()
+        self.wrapped_handle()
     }
 
     fn layout(&self) -> &PipelineLayout {
@@ -464,7 +464,7 @@ impl PipelineLayout {
     ) -> Result<Self, FennecError> {
         let set_layouts = set_layouts
             .iter()
-            .map(|layout| *layout.handle().handle())
+            .map(|layout| layout.handle())
             .collect::<Vec<vk::DescriptorSetLayout>>();
         // Set create info
         let create_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(&set_layouts);
@@ -482,11 +482,11 @@ impl PipelineLayout {
 }
 
 impl VKObject<vk::PipelineLayout> for PipelineLayout {
-    fn handle(&self) -> &VKHandle<vk::PipelineLayout> {
+    fn wrapped_handle(&self) -> &VKHandle<vk::PipelineLayout> {
         &self.layout
     }
 
-    fn handle_mut(&mut self) -> &mut VKHandle<vk::PipelineLayout> {
+    fn wrapped_handle_mut(&mut self) -> &mut VKHandle<vk::PipelineLayout> {
         &mut self.layout
     }
 

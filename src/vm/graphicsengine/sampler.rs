@@ -47,11 +47,11 @@ impl Sampler {
 }
 
 impl VKObject<vk::Sampler> for Sampler {
-    fn handle(&self) -> &VKHandle<vk::Sampler> {
+    fn wrapped_handle(&self) -> &VKHandle<vk::Sampler> {
         &self.sampler
     }
 
-    fn handle_mut(&mut self) -> &mut VKHandle<vk::Sampler> {
+    fn wrapped_handle_mut(&mut self) -> &mut VKHandle<vk::Sampler> {
         &mut self.sampler
     }
 

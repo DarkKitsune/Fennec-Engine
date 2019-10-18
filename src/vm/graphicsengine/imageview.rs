@@ -23,7 +23,7 @@ impl ImageView {
     ) -> Result<Self, FennecError> {
         // Set image view create info
         let create_info = vk::ImageViewCreateInfo::builder()
-            .image(*image.image_handle().handle())
+            .image(image.image_handle().handle())
             .format(image.format())
             .subresource_range(*range)
             .view_type(image.image_view_type())
@@ -48,11 +48,11 @@ impl ImageView {
 }
 
 impl VKObject<vk::ImageView> for ImageView {
-    fn handle(&self) -> &VKHandle<vk::ImageView> {
+    fn wrapped_handle(&self) -> &VKHandle<vk::ImageView> {
         &self.image_view
     }
 
-    fn handle_mut(&mut self) -> &mut VKHandle<vk::ImageView> {
+    fn wrapped_handle_mut(&mut self) -> &mut VKHandle<vk::ImageView> {
         &mut self.image_view
     }
 

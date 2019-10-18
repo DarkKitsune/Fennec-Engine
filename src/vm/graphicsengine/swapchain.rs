@@ -163,10 +163,10 @@ impl Swapchain {
                 .device_extensions()
                 .swapchain()
                 .acquire_next_image(
-                    *self.handle().handle(),
+                    self.handle(),
                     timeout_nanoseconds.unwrap_or(std::u64::MAX),
-                    semaphore.map(|e| *e.handle().handle()).unwrap_or_default(),
-                    fence.map(|e| *e.handle().handle()).unwrap_or_default(),
+                    semaphore.map(|e| e.handle()).unwrap_or_default(),
+                    fence.map(|e| e.handle()).unwrap_or_default(),
                 )
         }?
         .0)
@@ -179,8 +179,8 @@ impl Swapchain {
         queue: &Queue,
         semaphore: &Semaphore,
     ) -> Result<(), FennecError> {
-        let wait_semaphores = [*semaphore.handle().handle()];
-        let swapchains = [*self.handle().handle()];
+        let wait_semaphores = [semaphore.handle()];
+        let swapchains = [self.handle()];
         let image_indices = [image_index];
         let present_info = vk::PresentInfoKHR::builder()
             .wait_semaphores(&wait_semaphores)
@@ -192,7 +192,7 @@ impl Swapchain {
                 .functions()
                 .device_extensions()
                 .swapchain()
-                .queue_present(*queue.handle().handle(), &present_info)
+                .queue_present(queue.handle(), &present_info)
         }?;
         Ok(())
     }
@@ -209,11 +209,11 @@ impl Swapchain {
 }
 
 impl VKObject<vk::SwapchainKHR> for Swapchain {
-    fn handle(&self) -> &VKHandle<vk::SwapchainKHR> {
+    fn wrapped_handle(&self) -> &VKHandle<vk::SwapchainKHR> {
         &self.swapchain
     }
 
-    fn handle_mut(&mut self) -> &mut VKHandle<vk::SwapchainKHR> {
+    fn wrapped_handle_mut(&mut self) -> &mut VKHandle<vk::SwapchainKHR> {
         &mut self.swapchain
     }
 
@@ -254,11 +254,11 @@ impl SwapchainImage {
 }
 
 impl VKObject<vk::Image> for SwapchainImage {
-    fn handle(&self) -> &VKHandle<vk::Image> {
+    fn wrapped_handle(&self) -> &VKHandle<vk::Image> {
         &self.image
     }
 
-    fn handle_mut(&mut self) -> &mut VKHandle<vk::Image> {
+    fn wrapped_handle_mut(&mut self) -> &mut VKHandle<vk::Image> {
         &mut self.image
     }
 
@@ -273,7 +273,7 @@ impl VKObject<vk::Image> for SwapchainImage {
 
 impl Image for SwapchainImage {
     fn image_handle(&self) -> &VKHandle<vk::Image> {
-        self.handle()
+        self.wrapped_handle()
     }
 
     fn memory(&self) -> Option<&Memory> {

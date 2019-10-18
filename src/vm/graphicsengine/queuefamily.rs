@@ -342,7 +342,7 @@ impl Queue {
             let submit_wait_semaphores = match wait_semaphores {
                 Some(waits) => waits
                     .iter()
-                    .map(|wait| *wait.0.handle().handle())
+                    .map(|wait| wait.0.handle())
                     .collect::<Vec<vk::Semaphore>>(),
                 None => Default::default(),
             };
@@ -356,25 +356,25 @@ impl Queue {
             let submit_signal_semaphores = match signal_semaphores {
                 Some(signals) => signals
                     .iter()
-                    .map(|signal_semaphore| *signal_semaphore.handle().handle())
+                    .map(|signal_semaphore| signal_semaphore.handle())
                     .collect::<Vec<vk::Semaphore>>(),
                 None => Default::default(),
             };
             let submit_command_buffers = match command_buffers {
                 Some(command_buffers) => command_buffers
                     .iter()
-                    .map(|command_buffer| *command_buffer.handle().handle())
+                    .map(|command_buffer| command_buffer.handle())
                     .collect::<Vec<vk::CommandBuffer>>(),
                 None => Default::default(),
             };
             self.context().try_borrow()?.logical_device().queue_submit(
-                *self.handle().handle(),
+                self.handle(),
                 &[*vk::SubmitInfo::builder()
                     .wait_semaphores(&submit_wait_semaphores)
                     .wait_dst_stage_mask(&submit_wait_stages)
                     .signal_semaphores(&submit_signal_semaphores)
                     .command_buffers(&submit_command_buffers)],
-                fence.map(|e| *e.handle().handle()).unwrap_or_default(),
+                fence.map(|e| e.handle()).unwrap_or_default(),
             )
         }?;
         Ok(())
@@ -386,18 +386,18 @@ impl Queue {
             self.context()
                 .try_borrow()?
                 .logical_device()
-                .queue_wait_idle(*self.handle().handle())
+                .queue_wait_idle(self.handle())
         }?;
         Ok(())
     }
 }
 
 impl VKObject<vk::Queue> for Queue {
-    fn handle(&self) -> &VKHandle<vk::Queue> {
+    fn wrapped_handle(&self) -> &VKHandle<vk::Queue> {
         &self.queue
     }
 
-    fn handle_mut(&mut self) -> &mut VKHandle<vk::Queue> {
+    fn wrapped_handle_mut(&mut self) -> &mut VKHandle<vk::Queue> {
         &mut self.queue
     }
 
@@ -515,13 +515,13 @@ impl CommandPool {
             .remove(handle)
             .unwrap()
             .into_iter()
-            .map(|command_buffer| *command_buffer.handle().handle())
+            .map(|command_buffer| command_buffer.handle())
             .collect::<Vec<vk::CommandBuffer>>();
         unsafe {
             self.context()
                 .try_borrow()?
                 .logical_device()
-                .free_command_buffers(*self.handle().handle(), &command_buffers)
+                .free_command_buffers(self.handle(), &command_buffers)
         };
         Ok(())
     }
@@ -562,11 +562,11 @@ impl CommandPool {
 }
 
 impl VKObject<vk::CommandPool> for CommandPool {
-    fn handle(&self) -> &VKHandle<vk::CommandPool> {
+    fn wrapped_handle(&self) -> &VKHandle<vk::CommandPool> {
         &self.command_pool
     }
 
-    fn handle_mut(&mut self) -> &mut VKHandle<vk::CommandPool> {
+    fn wrapped_handle_mut(&mut self) -> &mut VKHandle<vk::CommandPool> {
         &mut self.command_pool
     }
 
@@ -603,7 +603,7 @@ impl CommandBuffer {
             let create_info = vk::CommandBufferAllocateInfo::builder()
                 .command_buffer_count(count)
                 .level(vk::CommandBufferLevel::PRIMARY)
-                .command_pool(*command_pool.handle().handle());
+                .command_pool(command_pool.handle());
             context
                 .try_borrow()?
                 .logical_device()
@@ -651,7 +651,7 @@ impl CommandBuffer {
             context
                 .try_borrow()?
                 .logical_device()
-                .begin_command_buffer(*self.handle().handle(), &begin_info)?;
+                .begin_command_buffer(self.handle(), &begin_info)?;
         }
         self.writing = true;
         Ok(CommandBufferWriter {
@@ -674,11 +674,11 @@ impl CommandBuffer {
 }
 
 impl VKObject<vk::CommandBuffer> for CommandBuffer {
-    fn handle(&self) -> &VKHandle<vk::CommandBuffer> {
+    fn wrapped_handle(&self) -> &VKHandle<vk::CommandBuffer> {
         &self.command_buffer
     }
 
-    fn handle_mut(&mut self) -> &mut VKHandle<vk::CommandBuffer> {
+    fn wrapped_handle_mut(&mut self) -> &mut VKHandle<vk::CommandBuffer> {
         &mut self.command_buffer
     }
 
@@ -721,7 +721,7 @@ impl<'a> CommandBufferWriter<'a> {
                 .try_borrow()?
                 .logical_device()
                 .cmd_pipeline_barrier(
-                    *self.command_buffer.handle().handle(),
+                    self.command_buffer.handle(),
                     src_stage,
                     dst_stage,
                     dependency_flags.unwrap_or_default(),
@@ -753,8 +753,8 @@ impl<'a> CommandBufferWriter<'a> {
                 .try_borrow()?
                 .logical_device()
                 .cmd_clear_color_image(
-                    *self.command_buffer.handle().handle(),
-                    *image.image_handle().handle(),
+                    self.command_buffer.handle(),
+                    image.image_handle().handle(),
                     layout,
                     clear_color,
                     ranges,
@@ -773,8 +773,8 @@ impl<'a> CommandBufferWriter<'a> {
     ) -> Result<ActiveRenderPass, FennecError> {
         self.command_buffer.verify_kind(&[QueueKind::Graphics])?;
         let begin_info = vk::RenderPassBeginInfo::builder()
-            .render_pass(*render_pass.handle().handle())
-            .framebuffer(*framebuffer.handle().handle())
+            .render_pass(render_pass.handle())
+            .framebuffer(framebuffer.handle())
             .render_area(render_area)
             .clear_values(clear_values);
         unsafe {
@@ -783,7 +783,7 @@ impl<'a> CommandBufferWriter<'a> {
                 .try_borrow()?
                 .logical_device()
                 .cmd_begin_render_pass(
-                    *self.command_buffer.handle().handle(),
+                    self.command_buffer.handle(),
                     &begin_info,
                     Default::default(),
                 );
@@ -819,9 +819,9 @@ impl<'a> CommandBufferWriter<'a> {
             .try_borrow()?
             .logical_device()
             .cmd_copy_buffer_to_image(
-                *self.command_buffer.handle().handle(),
-                *source.handle().handle(),
-                *destination.image_handle().handle(),
+                self.command_buffer.handle(),
+                source.handle(),
+                destination.image_handle().handle(),
                 destination_layout,
                 regions,
             );
@@ -839,7 +839,7 @@ impl<'a> Drop for CommandBufferWriter<'a> {
                 .context()
                 .borrow()
                 .logical_device()
-                .end_command_buffer(*self.command_buffer.handle().handle())
+                .end_command_buffer(self.command_buffer.handle())
                 .unwrap();
         }
     }
@@ -860,7 +860,7 @@ impl<'a> ActiveRenderPass<'a> {
         &self,
         pipeline: &'a GraphicsPipeline,
     ) -> Result<ActiveGraphicsPipeline, FennecError> {
-        let command_buffer_handle = *self.command_buffer_writer.command_buffer.handle().handle();
+        let command_buffer_handle = self.command_buffer_writer.command_buffer.handle();
         unsafe {
             self.command_buffer_writer
                 .command_buffer
@@ -870,7 +870,7 @@ impl<'a> ActiveRenderPass<'a> {
                 .cmd_bind_pipeline(
                     command_buffer_handle,
                     vk::PipelineBindPoint::GRAPHICS,
-                    *pipeline.handle().handle(),
+                    pipeline.handle(),
                 );
             // TODO: Start pipeline usage benchmark
             Ok(ActiveGraphicsPipeline {
@@ -890,7 +890,7 @@ impl<'a> Drop for ActiveRenderPass<'a> {
                 .context()
                 .borrow()
                 .logical_device()
-                .cmd_end_render_pass(*self.command_buffer_writer.command_buffer.handle().handle());
+                .cmd_end_render_pass(self.command_buffer_writer.command_buffer.handle());
         }
     }
 }
@@ -921,13 +921,11 @@ impl<'a> ActiveGraphicsPipeline<'a> {
                 .try_borrow()?
                 .logical_device()
                 .cmd_bind_index_buffer(
-                    *self
-                        .active_render_pass
+                    self.active_render_pass
                         .command_buffer_writer
                         .command_buffer
-                        .handle()
                         .handle(),
-                    *buffer.handle().handle(),
+                    buffer.handle(),
                     offset_bytes,
                     index_type,
                 );
@@ -944,7 +942,7 @@ impl<'a> ActiveGraphicsPipeline<'a> {
         unsafe {
             let descriptor_sets = descriptor_sets
                 .iter()
-                .map(|set| *set.handle().handle())
+                .map(|set| set.handle())
                 .collect::<Vec<vk::DescriptorSet>>();
             self.active_render_pass
                 .command_buffer_writer
@@ -953,14 +951,12 @@ impl<'a> ActiveGraphicsPipeline<'a> {
                 .try_borrow()?
                 .logical_device()
                 .cmd_bind_descriptor_sets(
-                    *self
-                        .active_render_pass
+                    self.active_render_pass
                         .command_buffer_writer
                         .command_buffer
-                        .handle()
                         .handle(),
                     vk::PipelineBindPoint::GRAPHICS,
-                    *self.pipeline.layout().handle().handle(),
+                    self.pipeline.layout().handle(),
                     first_set,
                     &descriptor_sets,
                     &[],
@@ -991,11 +987,9 @@ impl<'a> ActiveGraphicsPipeline<'a> {
                 .try_borrow()?
                 .logical_device()
                 .cmd_draw(
-                    *self
-                        .active_render_pass
+                    self.active_render_pass
                         .command_buffer_writer
                         .command_buffer
-                        .handle()
                         .handle(),
                     vertex_count,
                     instance_count,
@@ -1029,11 +1023,9 @@ impl<'a> ActiveGraphicsPipeline<'a> {
                 .try_borrow()?
                 .logical_device()
                 .cmd_draw_indexed(
-                    *self
-                        .active_render_pass
+                    self.active_render_pass
                         .command_buffer_writer
                         .command_buffer
-                        .handle()
                         .handle(),
                     index_count,
                     instance_count,

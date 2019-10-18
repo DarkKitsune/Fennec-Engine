@@ -148,11 +148,11 @@ impl DescriptorPool {
 }
 
 impl VKObject<vk::DescriptorPool> for DescriptorPool {
-    fn handle(&self) -> &VKHandle<vk::DescriptorPool> {
+    fn wrapped_handle(&self) -> &VKHandle<vk::DescriptorPool> {
         &self.descriptor_pool
     }
 
-    fn handle_mut(&mut self) -> &mut VKHandle<vk::DescriptorPool> {
+    fn wrapped_handle_mut(&mut self) -> &mut VKHandle<vk::DescriptorPool> {
         &mut self.descriptor_pool
     }
 
@@ -194,12 +194,12 @@ impl DescriptorSet {
         let layout_borrowed = layout.try_borrow()?;
         // Make a vector of layout.count copies of the layout's handle
         let set_layouts = (0..layout_borrowed.count)
-            .map(|_index| *layout_borrowed.handle().handle())
+            .map(|_index| layout_borrowed.handle())
             .collect::<Vec<vk::DescriptorSetLayout>>();
         // Set create info
         let create_info = vk::DescriptorSetAllocateInfo::builder()
             .set_layouts(&set_layouts)
-            .descriptor_pool(*pool.handle().handle());
+            .descriptor_pool(pool.handle());
         // Return vector of descriptor sets
         Ok(unsafe {
             context
@@ -231,7 +231,7 @@ impl DescriptorSet {
             .iter()
             .map(|write| {
                 *vk::DescriptorBufferInfo::builder()
-                    .buffer(*write.buffer.handle().handle())
+                    .buffer(write.buffer.handle())
                     .offset(write.offset)
                     .range(write.length)
             })
@@ -245,7 +245,7 @@ impl DescriptorSet {
         )?;
         // Return write info
         Ok(*vk::WriteDescriptorSet::builder()
-            .dst_set(*self.handle().handle())
+            .dst_set(self.handle())
             .dst_binding(descriptor_index)
             .dst_array_element(start)
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
@@ -264,9 +264,9 @@ impl DescriptorSet {
             .iter()
             .map(|write| {
                 *vk::DescriptorImageInfo::builder()
-                    .image_view(*write.image_view.handle().handle())
+                    .image_view(write.image_view.handle())
                     .image_layout(write.image_layout)
-                    .sampler(*write.sampler.handle().handle())
+                    .sampler(write.sampler.handle())
             })
             .collect::<Vec<vk::DescriptorImageInfo>>();
         // Check arguments
@@ -278,7 +278,7 @@ impl DescriptorSet {
         )?;
         // Return write info
         Ok(*vk::WriteDescriptorSet::builder()
-            .dst_set(*self.handle().handle())
+            .dst_set(self.handle())
             .dst_binding(descriptor_index)
             .dst_array_element(start)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
@@ -324,11 +324,11 @@ impl DescriptorSet {
 }
 
 impl VKObject<vk::DescriptorSet> for DescriptorSet {
-    fn handle(&self) -> &VKHandle<vk::DescriptorSet> {
+    fn wrapped_handle(&self) -> &VKHandle<vk::DescriptorSet> {
         &self.descriptor_set
     }
 
-    fn handle_mut(&mut self) -> &mut VKHandle<vk::DescriptorSet> {
+    fn wrapped_handle_mut(&mut self) -> &mut VKHandle<vk::DescriptorSet> {
         &mut self.descriptor_set
     }
 
@@ -402,11 +402,11 @@ impl DescriptorSetLayout {
 }
 
 impl VKObject<vk::DescriptorSetLayout> for DescriptorSetLayout {
-    fn handle(&self) -> &VKHandle<vk::DescriptorSetLayout> {
+    fn wrapped_handle(&self) -> &VKHandle<vk::DescriptorSetLayout> {
         &self.layout
     }
 
-    fn handle_mut(&mut self) -> &mut VKHandle<vk::DescriptorSetLayout> {
+    fn wrapped_handle_mut(&mut self) -> &mut VKHandle<vk::DescriptorSetLayout> {
         &mut self.layout
     }
 

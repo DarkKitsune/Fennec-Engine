@@ -56,7 +56,7 @@ impl Buffer {
             memory_flags,
         )?;
         // Bind memory to buffer
-        unsafe { logical_device.bind_buffer_memory(buffer, *memory.handle().handle(), 0) }?;
+        unsafe { logical_device.bind_buffer_memory(buffer, memory.handle(), 0) }?;
         // Return buffer
         Ok(Self {
             buffer: VKHandle::new(context, buffer, false),
@@ -170,11 +170,11 @@ impl Buffer {
 }
 
 impl VKObject<vk::Buffer> for Buffer {
-    fn handle(&self) -> &VKHandle<vk::Buffer> {
+    fn wrapped_handle(&self) -> &VKHandle<vk::Buffer> {
         &self.buffer
     }
 
-    fn handle_mut(&mut self) -> &mut VKHandle<vk::Buffer> {
+    fn wrapped_handle_mut(&mut self) -> &mut VKHandle<vk::Buffer> {
         &mut self.buffer
     }
 

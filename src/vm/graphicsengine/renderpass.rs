@@ -73,11 +73,11 @@ impl RenderPass {
 }
 
 impl VKObject<vk::RenderPass> for RenderPass {
-    fn handle(&self) -> &VKHandle<vk::RenderPass> {
+    fn wrapped_handle(&self) -> &VKHandle<vk::RenderPass> {
         &self.render_pass
     }
 
-    fn handle_mut(&mut self) -> &mut VKHandle<vk::RenderPass> {
+    fn wrapped_handle_mut(&mut self) -> &mut VKHandle<vk::RenderPass> {
         &mut self.render_pass
     }
 

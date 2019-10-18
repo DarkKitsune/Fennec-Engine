@@ -23,11 +23,11 @@ impl Framebuffer {
     ) -> Result<Self, FennecError> {
         let attachment_handles = attachments
             .iter()
-            .map(|view| *view.handle().handle())
+            .map(|view| view.handle())
             .collect::<Vec<vk::ImageView>>();
         // Set framebuffer create info
         let create_info = vk::FramebufferCreateInfo::builder()
-            .render_pass(*render_pass.handle().handle())
+            .render_pass(render_pass.handle())
             .attachments(&attachment_handles)
             .width(
                 attachments
@@ -70,11 +70,11 @@ impl Framebuffer {
 }
 
 impl VKObject<vk::Framebuffer> for Framebuffer {
-    fn handle(&self) -> &VKHandle<vk::Framebuffer> {
+    fn wrapped_handle(&self) -> &VKHandle<vk::Framebuffer> {
         &self.framebuffer
     }
 
-    fn handle_mut(&mut self) -> &mut VKHandle<vk::Framebuffer> {
+    fn wrapped_handle_mut(&mut self) -> &mut VKHandle<vk::Framebuffer> {
         &mut self.framebuffer
     }
 

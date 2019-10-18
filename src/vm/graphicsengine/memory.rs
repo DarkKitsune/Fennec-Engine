@@ -66,7 +66,7 @@ impl Memory {
         }
         let ptr = unsafe {
             self.context().try_borrow()?.logical_device().map_memory(
-                *self.handle().handle(),
+                self.handle(),
                 offset,
                 size,
                 Default::default(),
@@ -93,11 +93,11 @@ impl Memory {
 }
 
 impl VKObject<vk::DeviceMemory> for Memory {
-    fn handle(&self) -> &VKHandle<vk::DeviceMemory> {
+    fn wrapped_handle(&self) -> &VKHandle<vk::DeviceMemory> {
         &self.memory
     }
 
-    fn handle_mut(&mut self) -> &mut VKHandle<vk::DeviceMemory> {
+    fn wrapped_handle_mut(&mut self) -> &mut VKHandle<vk::DeviceMemory> {
         &mut self.memory
     }
 
@@ -168,7 +168,7 @@ impl Drop for MemoryMap<'_> {
                 .try_borrow()
                 .unwrap()
                 .logical_device()
-                .unmap_memory(*self.memory.handle().handle())
+                .unmap_memory(self.memory.handle())
         }
     }
 }

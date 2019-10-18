@@ -260,13 +260,13 @@ where
     }
 
     /// Get the raw handle wrapped by the VKHandle
-    pub fn handle(&self) -> &THandleType {
-        &self.handle
+    pub fn handle(&self) -> THandleType {
+        self.handle
     }
 
     /// Get the raw handle wrapped by the VKHandle
-    pub fn handle_mut(&mut self) -> &mut THandleType {
-        &mut self.handle
+    pub fn handle_mut(&mut self) -> THandleType {
+        self.handle
     }
 
     /// Set the name of the VKHandle (usually shouldn't be used directly)
@@ -292,7 +292,7 @@ where
         // Log that we are dropping this
         println!("Dropping {}", self.name());
         // Destroy the object pointed to by the handle
-        let mut handle = *self.handle_mut();
+        let mut handle = self.handle();
         handle
             .destroy(self.context())
             .expect("Error occured when dropping VKHandle");
@@ -304,17 +304,24 @@ where
     THandleType: HandleType + Copy + vk::Handle + 'static,
 {
     /// The VKHandle wrapping the raw Vulkan object handle
-    fn handle(&self) -> &VKHandle<THandleType>;
+    fn wrapped_handle(&self) -> &VKHandle<THandleType>;
     /// The VKHandle wrapping the raw Vulkan object handle
-    fn handle_mut(&mut self) -> &mut VKHandle<THandleType>;
-    /// Get the type of the Vulkan object
+    fn wrapped_handle_mut(&mut self) -> &mut VKHandle<THandleType>;
+    /// Gets the type of the Vulkan object
     fn object_type() -> vk::DebugReportObjectTypeEXT;
-    /// Update the name of children (should not normally be used)
+
+    /// Gets the raw Vulkan object handle
+    fn handle(&self) -> THandleType {
+        self.wrapped_handle().handle()
+    }
+
+    /// Updates the name of children (should not normally be used)
     fn set_children_names(&mut self) -> Result<(), FennecError>;
-    /// Set the name of the Vulkan object for debug info
+
+    /// Sets the name of the Vulkan object for debug info
     fn set_name(&mut self, name: &str) -> Result<(), FennecError> {
         // Set the name on the program side by setting the VKHandle's name
-        self.handle_mut().set_name(name);
+        self.wrapped_handle_mut().set_name(name);
         // Set the name on the Vulkan side
         {
             let context = self.context().try_borrow()?;
@@ -322,7 +329,7 @@ where
                 FennecError::from_error("Could not convert object name to a CString", Box::new(err))
             })?;
             let object_name = vk::DebugMarkerObjectNameInfoEXT::builder()
-                .object(self.handle().handle().as_raw())
+                .object(self.handle().as_raw())
                 .object_type(Self::object_type())
                 .object_name(&cstr);
             unsafe {
@@ -343,17 +350,17 @@ where
 
     /// Get the name of the Vulkan object
     fn name(&self) -> &str {
-        self.handle().name()
+        self.wrapped_handle().name()
     }
 
     /// Get the associated graphics context
     fn context(&self) -> &Rc<RefCell<Context>> {
-        self.handle().context()
+        self.wrapped_handle().context()
     }
 
     /// Get the associated graphics context
     fn context_mut(&mut self) -> &mut Rc<RefCell<Context>> {
-        self.handle_mut().context_mut()
+        self.wrapped_handle_mut().context_mut()
     }
 
     fn with_name(mut self, name: &str) -> Result<Self, FennecError>

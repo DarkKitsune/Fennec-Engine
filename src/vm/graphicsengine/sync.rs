@@ -36,7 +36,7 @@ impl Fence {
             self.context()
                 .try_borrow()?
                 .logical_device()
-                .get_fence_status(*self.handle().handle())
+                .get_fence_status(self.handle())
         };
         match status {
             Ok(_) => Ok(FenceStatus::Signaled),
@@ -63,7 +63,7 @@ impl Fence {
                 .try_borrow()?
                 .logical_device()
                 .wait_for_fences(
-                    &[*self.handle().handle()],
+                    &[self.handle()],
                     false,
                     timeout_nanoseconds.unwrap_or(std::u64::MAX),
                 )
@@ -76,17 +76,17 @@ impl Fence {
             self.context()
                 .try_borrow()?
                 .logical_device()
-                .reset_fences(&[*self.handle().handle()])
+                .reset_fences(&[self.handle()])
         }?)
     }
 }
 
 impl VKObject<vk::Fence> for Fence {
-    fn handle(&self) -> &VKHandle<vk::Fence> {
+    fn wrapped_handle(&self) -> &VKHandle<vk::Fence> {
         &self.fence
     }
 
-    fn handle_mut(&mut self) -> &mut VKHandle<vk::Fence> {
+    fn wrapped_handle_mut(&mut self) -> &mut VKHandle<vk::Fence> {
         &mut self.fence
     }
 
@@ -128,11 +128,11 @@ impl Semaphore {
 }
 
 impl VKObject<vk::Semaphore> for Semaphore {
-    fn handle(&self) -> &VKHandle<vk::Semaphore> {
+    fn wrapped_handle(&self) -> &VKHandle<vk::Semaphore> {
         &self.semaphore
     }
 
-    fn handle_mut(&mut self) -> &mut VKHandle<vk::Semaphore> {
+    fn wrapped_handle_mut(&mut self) -> &mut VKHandle<vk::Semaphore> {
         &mut self.semaphore
     }
 

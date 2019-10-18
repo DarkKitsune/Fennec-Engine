@@ -59,11 +59,11 @@ impl ShaderModule {
 }
 
 impl VKObject<vk::ShaderModule> for ShaderModule {
-    fn handle(&self) -> &VKHandle<vk::ShaderModule> {
+    fn wrapped_handle(&self) -> &VKHandle<vk::ShaderModule> {
         &self.shader_module
     }
 
-    fn handle_mut(&mut self) -> &mut VKHandle<vk::ShaderModule> {
+    fn wrapped_handle_mut(&mut self) -> &mut VKHandle<vk::ShaderModule> {
         &mut self.shader_module
     }
 
