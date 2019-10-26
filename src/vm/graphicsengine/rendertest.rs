@@ -1,8 +1,5 @@
 use super::buffer::Buffer;
-use super::descriptorpool::{
-    BufferWrite, CombinedImageSamplerWrite, Descriptor, DescriptorPool, DescriptorSet,
-    DescriptorSetLayout,
-};
+use super::descriptorpool::{Descriptor, DescriptorPool, DescriptorSet, DescriptorSetLayout};
 use super::framebuffer::Framebuffer;
 use super::image::{Image, Image2D};
 use super::imageview::ImageView;
@@ -41,18 +38,17 @@ pub struct RenderTest {
 impl RenderTest {
     /// Factory method
     pub fn new(
-        context: &Rc<RefCell<Context>>,
         swapchain: &Swapchain,
         queue_family_collection: &mut QueueFamilyCollection,
     ) -> Result<Self, FennecError> {
         // Create pipeline
-        let pipeline = RenderTestPipeline::new(context, swapchain)?;
+        let pipeline = RenderTestPipeline::new(swapchain.context(), swapchain)?;
         // Create render finished semaphore
         let finished_semaphore =
-            Semaphore::new(context)?.with_name("RenderTest::finished_semaphore")?;
+            Semaphore::new(swapchain.context())?.with_name("RenderTest::finished_semaphore")?;
         // Create color uniform buffer
         let mut color_uniform_buffer = Buffer::new(
-            context,
+            swapchain.context(),
             std::mem::size_of::<(f32, f32, f32, f32)>() as u64 * 3,
             vk::BufferUsageFlags::UNIFORM_BUFFER,
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
@@ -75,117 +71,31 @@ impl RenderTest {
             ImageFormat::PNG,
         )?;
         let texture_image = Image2D::new(
-            context,
+            swapchain.context(),
             vk::Extent2D {
                 width: texture_source.width(),
                 height: texture_source.height(),
             },
             vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
+            &[queue_family_collection.graphics()],
             Some(vk::Format::B8G8R8A8_UNORM),
             Some(vk::ImageLayout::UNDEFINED),
             None,
         )?
         .with_name("RenderTest::texture_image")?;
-        {
-            // Create and fill staging buffer
-            let staging_buffer = {
-                let texture_source_raw = texture_source.to_bgra().into_raw();
-                unsafe {
-                    Buffer::from_bytes(
-                        context,
-                        &texture_source_raw,
-                        texture_source_raw.len(),
-                        vk::BufferUsageFlags::TRANSFER_SRC,
-                        None,
-                        None,
-                    )
-                }?
-                .with_name("RenderTest::new::staging_buffer")?
-            };
-            // Write command buffer to copy buffer to image
-            let copy_command_buffers_handle = {
-                let (copy_command_buffers_handle, copy_command_buffers) = queue_family_collection
-                    .graphics_mut()
-                    .command_pools_mut()
-                    .unwrap()
-                    .transient_mut()
-                    .create_command_buffers(1)?;
-                let writer = copy_command_buffers[0].begin(true, false)?;
-                writer.pipeline_barrier(
-                    vk::PipelineStageFlags::TOP_OF_PIPE,
-                    vk::PipelineStageFlags::TRANSFER,
-                    None,
-                    None,
-                    None,
-                    Some(&[*vk::ImageMemoryBarrier::builder()
-                        .image(texture_image.handle())
-                        .subresource_range(texture_image.range_color_basic())
-                        .old_layout(vk::ImageLayout::UNDEFINED)
-                        .new_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                        .src_access_mask(Default::default())
-                        .dst_access_mask(vk::AccessFlags::TRANSFER_WRITE)]),
-                )?;
-                unsafe {
-                    writer.copy_buffer_to_image(
-                        &staging_buffer,
-                        &texture_image,
-                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                        &[Buffer::copy_to_image(
-                            0,
-                            &texture_image,
-                            vk::ImageAspectFlags::COLOR,
-                            0,
-                        )],
-                    )?;
-                }
-                writer.pipeline_barrier(
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::PipelineStageFlags::FRAGMENT_SHADER,
-                    None,
-                    None,
-                    None,
-                    Some(&[*vk::ImageMemoryBarrier::builder()
-                        .image(texture_image.handle())
-                        .subresource_range(texture_image.range_color_basic())
-                        .old_layout(vk::ImageLayout::TRANSFER_DST_OPTIMAL)
-                        .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                        .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-                        .dst_access_mask(vk::AccessFlags::SHADER_READ)]),
-                )?;
-                copy_command_buffers_handle
-            };
-            // Submit command buffer
-            let queue = queue_family_collection
-                .graphics()
-                .queue_of_priority(1.0)
-                .unwrap();
-            queue.submit(
-                Some(&[&queue_family_collection
-                    .graphics()
-                    .command_pools()
-                    .unwrap()
-                    .transient()
-                    .command_buffers(copy_command_buffers_handle)?[0]]),
-                None,
-                None,
-                None,
-            )?;
-            // Wait for the copy to be finished
-            queue.wait()?;
-            // Clean up command buffers
-            queue_family_collection
-                .graphics_mut()
-                .command_pools_mut()
-                .unwrap()
-                .transient_mut()
-                .destroy_command_buffers(copy_command_buffers_handle)?;
-        }
+        texture_image.load_compressed_image(
+            queue_family_collection,
+            &texture_source,
+            vk::PipelineStageFlags::FRAGMENT_SHADER,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            vk::AccessFlags::SHADER_READ,
+        )?;
         let texture_image_view = texture_image
             .view(&texture_image.range_color_basic(), None)?
             .with_name("RenderTest::texture_image_view")?;
         // Create sampler
         let texture_sampler = Sampler::new(
-            context,
+            swapchain.context(),
             Filters {
                 min: vk::Filter::NEAREST,
                 mag: vk::Filter::NEAREST,
@@ -198,24 +108,24 @@ impl RenderTest {
         // Update descriptor set
         let descriptor_set = pipeline.descriptor_set()?;
         pipeline.descriptor_pool.update_descriptor_sets(&[
-            descriptor_set.write_uniform_buffers(
-                0,
-                0,
-                &[BufferWrite {
-                    buffer: &color_uniform_buffer,
-                    offset: 0,
-                    length: color_uniform_buffer.size(),
-                }],
-            )?,
-            descriptor_set.write_combined_image_samplers(
-                1,
-                0,
-                &[CombinedImageSamplerWrite {
-                    image_view: &texture_image_view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                    sampler: &texture_sampler,
-                }],
-            )?,
+            *vk::WriteDescriptorSet::builder()
+                .dst_set(descriptor_set.handle())
+                .dst_binding(0)
+                .dst_array_element(0)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(&[*vk::DescriptorBufferInfo::builder()
+                    .buffer(color_uniform_buffer.handle())
+                    .offset(0)
+                    .range(color_uniform_buffer.size())]),
+            *vk::WriteDescriptorSet::builder()
+                .dst_set(descriptor_set.handle())
+                .dst_binding(1)
+                .dst_array_element(0)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .image_info(&[*vk::DescriptorImageInfo::builder()
+                    .image_view(texture_image_view.handle())
+                    .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                    .sampler(texture_sampler.handle())]),
         ])?;
         // Create command buffers
         let (command_buffers_handle, command_buffers) = queue_family_collection
@@ -329,7 +239,7 @@ impl RenderTestPipeline {
                 .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
                 .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
                 .initial_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                .final_layout(vk::ImageLayout::PRESENT_SRC_KHR),
+                .final_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL),
         ];
         let subpasses = [Subpass {
             input_attachments: vec![],

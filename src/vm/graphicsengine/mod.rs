@@ -3,15 +3,21 @@ pub mod descriptorpool;
 pub mod framebuffer;
 pub mod image;
 pub mod imageview;
+pub mod layerrenderer;
 pub mod memory;
 pub mod pipeline;
+pub mod presenttransitioner;
 pub mod queuefamily;
 pub mod renderpass;
 pub mod rendertest;
 pub mod sampler;
 pub mod shadermodule;
+pub mod spritelayer;
+pub mod spritelayerrenderer;
 pub mod swapchain;
 pub mod sync;
+pub mod tilelayerrenderer;
+pub mod tileregion;
 pub mod vkobject;
 
 use crate::error::FennecError;
@@ -26,8 +32,11 @@ use ash::vk;
 use ash::{Device, Entry, Instance};
 use colored::Colorize;
 use glutin::os::windows::WindowExt;
+use layerrenderer::LayerRenderer;
+use presenttransitioner::PresentTransitioner;
 use queuefamily::QueueFamilyCollection;
 use rendertest::RenderTest;
+use spritelayerrenderer::SpriteLayerRenderer;
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::fs::read_dir;
@@ -47,6 +56,8 @@ pub struct GraphicsEngine {
     swapchain: Swapchain,
     image_available_semaphore: Semaphore,
     render_test: RenderTest,
+    sprite_layer_renderer: SpriteLayerRenderer,
+    present_transitioner: PresentTransitioner,
 }
 
 impl GraphicsEngine {
@@ -64,7 +75,27 @@ impl GraphicsEngine {
         let image_available_semaphore =
             Semaphore::new(&context)?.with_name("GraphicsEngine::image_available_semaphore")?;
         // Create render test stage
-        let render_test = RenderTest::new(&context, &swapchain, &mut queue_family_collection)?;
+        let render_test = RenderTest::new(&swapchain, &mut queue_family_collection)?;
+        // Create sprite layer renderer
+        let sprite_layer_renderer = SpriteLayerRenderer::new(
+            &mut queue_family_collection,
+            &swapchain,
+            Some((
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+            )),
+        )?;
+        // Create present transitioner
+        let present_transitioner = PresentTransitioner::new(
+            &mut queue_family_collection,
+            &swapchain,
+            (
+                sprite_layer_renderer.final_stage(),
+                sprite_layer_renderer.final_layout(),
+                sprite_layer_renderer.final_access(),
+            ),
+        )?;
         // Return the graphics engine
         Ok(Self {
             context,
@@ -72,6 +103,8 @@ impl GraphicsEngine {
             swapchain,
             image_available_semaphore,
             render_test,
+            sprite_layer_renderer,
+            present_transitioner,
         })
     }
 
@@ -88,6 +121,20 @@ impl GraphicsEngine {
             image_index,
             None,
         )?;
+        // Submit sprite layer render
+        let sprite_layer_render_finished = self.sprite_layer_renderer.submit_draw(
+            render_test_finished,
+            &self.queue_family_collection,
+            image_index,
+            None,
+        )?;
+        // Submit present transition
+        let present_transition_finished = self.present_transitioner.submit(
+            sprite_layer_render_finished,
+            &self.queue_family_collection,
+            image_index,
+            None,
+        )?;
         // Present swapchain image
         let present_queue = self
             .queue_family_collection
@@ -95,7 +142,7 @@ impl GraphicsEngine {
             .queue_of_priority(1.0)
             .ok_or_else(|| FennecError::new("No present queues exist"))?;
         self.swapchain
-            .present(image_index, present_queue, render_test_finished)?;
+            .present(image_index, present_queue, present_transition_finished)?;
         Ok(())
     }
 

@@ -112,6 +112,20 @@ impl QueueFamilyCollection {
 
     /// Set up queue families
     pub fn setup(&mut self, context: &Rc<RefCell<Context>>) -> Result<(), FennecError> {
+        // Clarify names because queue families may have the same index
+        if self.present_mut().index == self.graphics_mut().index {
+            self.present_mut().name += "/graphics";
+            self.graphics_mut().name += "/present";
+        }
+        if self.present_mut().index == self.transfer_mut().index {
+            self.present_mut().name += "/transfer";
+            self.transfer_mut().name += "/present";
+        }
+        if self.graphics_mut().index == self.transfer_mut().index {
+            self.graphics_mut().name += "/transfer";
+            self.transfer_mut().name += "/graphics";
+        }
+        // Set up
         self.present_mut().setup(context)?;
         self.graphics_mut().setup(context)?;
         self.transfer_mut().setup(context)?;
@@ -905,6 +919,37 @@ pub struct ActiveGraphicsPipeline<'a> {
 impl<'a> ActiveGraphicsPipeline<'a> {
     /// Consume the ActiveRenderPass, ending the render pass
     pub fn end(self) {}
+
+    /// Bind a vertex buffer
+    pub fn bind_vertex_buffers(
+        &self,
+        first_binding_location: u32,
+        buffers: &[&Buffer],
+        offset_bytes: &[u64],
+    ) -> Result<(), FennecError> {
+        unsafe {
+            let buffer_handles = buffers
+                .iter()
+                .map(|buffer| buffer.handle())
+                .collect::<Vec<vk::Buffer>>();
+            self.active_render_pass
+                .command_buffer_writer
+                .command_buffer
+                .context()
+                .try_borrow()?
+                .logical_device()
+                .cmd_bind_vertex_buffers(
+                    self.active_render_pass
+                        .command_buffer_writer
+                        .command_buffer
+                        .handle(),
+                    first_binding_location,
+                    &buffer_handles,
+                    offset_bytes,
+                );
+            Ok(())
+        }
+    }
 
     /// Bind an index buffer
     pub fn bind_index_buffer(

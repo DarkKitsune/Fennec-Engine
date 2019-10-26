@@ -289,8 +289,6 @@ where
         if self.protected {
             return;
         }
-        // Log that we are dropping this
-        println!("Dropping {}", self.name());
         // Destroy the object pointed to by the handle
         let mut handle = self.handle();
         handle

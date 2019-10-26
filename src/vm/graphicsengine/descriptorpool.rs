@@ -219,7 +219,7 @@ impl DescriptorSet {
         &self.layout
     }
 
-    /// Creates a vk::WriteDescriptorSet describing buffer writes to a
+    /*/// Creates a vk::WriteDescriptorSet describing buffer writes to a
     /// descriptor in the set
     pub fn write_uniform_buffers(
         &self,
@@ -250,9 +250,9 @@ impl DescriptorSet {
             .dst_array_element(start)
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
             .buffer_info(&buffer_writes))
-    }
+    }*/
 
-    /// Creates a vk::WriteDescriptorSet describing combined image-sampler
+    /*/// Creates a vk::WriteDescriptorSet describing combined image-sampler
     /// writes to a descriptor in the set
     pub fn write_combined_image_samplers(
         &self,
@@ -283,8 +283,8 @@ impl DescriptorSet {
             .dst_array_element(start)
             .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
             .image_info(&image_sampler_writes))
-    }
-
+    }*/
+    /*
     /// Used to check the arguments passed to write_* functions
     fn write_argument_check(
         &self,
@@ -320,7 +320,7 @@ impl DescriptorSet {
             )));
         }
         Ok(())
-    }
+    }*/
 }
 
 impl VKObject<vk::DescriptorSet> for DescriptorSet {

@@ -338,6 +338,7 @@ impl Into<vk::Format> for AttributeFormat {
 }
 
 /// Describes a viewport and scissor
+#[derive(Copy, Clone, Debug)]
 pub struct Viewport {
     /// Viewport x
     pub x: f32,
@@ -357,7 +358,26 @@ pub struct Viewport {
     pub scissor_extent: vk::Extent2D,
 }
 
+impl Default for Viewport {
+    fn default() -> Self {
+        Self {
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            min_depth: 0.0,
+            max_depth: 1.0,
+            scissor_offset: vk::Offset2D { x: 0, y: 0 },
+            scissor_extent: vk::Extent2D {
+                width: 100,
+                height: 100,
+            },
+        }
+    }
+}
+
 /// Contains graphics pipeline state infos
+#[derive(Default, Clone, Debug)]
 pub struct GraphicsStates {
     pub culling_state: CullingState,
     pub depth_state: DepthState,
@@ -365,7 +385,7 @@ pub struct GraphicsStates {
 }
 
 /// Describes a backface culling mode
-#[derive(Default, Copy, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct CullingState {
     /// Whether backface culling is enabled
     pub enable: bool,
@@ -374,7 +394,7 @@ pub struct CullingState {
 }
 
 /// Describes a depth test/write mode
-#[derive(Copy, Clone)]
+#[derive(Clone, Debug)]
 pub struct DepthState {
     /// Whether depth testing is enabled
     pub enable_test: bool,
@@ -409,7 +429,7 @@ impl Default for DepthState {
 }
 
 /// Describes a blend mode
-#[derive(Default, Clone)]
+#[derive(Clone, Debug)]
 pub struct BlendState {
     /// Enable use of the logic op
     pub enable_logic_op: bool,
@@ -422,8 +442,19 @@ pub struct BlendState {
     pub blend_constant: (f32, f32, f32, f32),
 }
 
+impl Default for BlendState {
+    fn default() -> Self {
+        Self {
+            enable_logic_op: false,
+            logic_op: Default::default(),
+            color_attachment_blend_functions: vec![Default::default()],
+            blend_constant: Default::default(),
+        }
+    }
+}
+
 /// Advanced settings to be used in pipeline factory methods
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct AdvancedGraphicsPipelineSettings {
     /// Various flags for the pipeline
     pub flags: Option<vk::PipelineCreateFlags>,
@@ -440,7 +471,7 @@ pub struct AdvancedGraphicsPipelineSettings {
 }
 
 /// Describes a set of depth bias settings
-#[derive(Default, Copy, Clone)]
+#[derive(Default, Copy, Clone, Debug)]
 pub struct DepthBias {
     /// Whether depth bias is enabled
     pub enable: bool,

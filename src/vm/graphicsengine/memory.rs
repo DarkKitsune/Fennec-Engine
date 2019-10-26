@@ -48,7 +48,7 @@ impl Memory {
     }
 
     /// Maps a region of the memory to host memory for writing
-    pub fn map_region(&mut self, offset: u64, size: u64) -> Result<MemoryMap, FennecError> {
+    pub fn map_region(&self, offset: u64, size: u64) -> Result<MemoryMap, FennecError> {
         if !self.mappable() {
             return Err(FennecError::new(format!(
                 "Cannot map {} as it is either protected or host-invisible",
@@ -144,7 +144,7 @@ fn get_memory_type_index(
 /// Represents a region of device memory mapped to host memory
 pub struct MemoryMap<'a> {
     context: Rc<RefCell<Context>>,
-    memory: &'a mut Memory,
+    memory: &'a Memory,
     ptr: *mut c_void,
 }
 
