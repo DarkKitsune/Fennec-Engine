@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 rlua = "0.16.3"
 version = "3.0.0"
-ash = "0.29.0"
+ash = "0.33.1"
 glutin = "0.21.1"
 winapi = "0.3.8"
 colored = "1.8.0"
